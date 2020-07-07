@@ -2,6 +2,7 @@ import datetime
 import json
 
 # from Embedded2.src.jetson.db ... import ...
+# from wherever import email method
 
 """
 Put this file one folder up from the stored images.
@@ -13,32 +14,65 @@ Email end-user with the Drive link.
 """
 
 
-def query_db():
-    """Get image filenames. Probably just a SQL query."""
-    pass
-
-
-def upload_images(imgs):
+# TODO rename method
+def get_metadata():
     """
-    For each filename returned by query_db, upload image
-    and its relevant metadata (eg. face coords) to Drive.
-    @param imgs: [str, str, ...]
+    Get image filenames and other relevant metadata from the database.
+    @return: A list of dictionaries with the metadata for each image TODO describe the metadata
+
+    Query:
+    SELECT b.image_name, b.X_Min, b.Y_Min, b.X_Max, b.Y_Max,
+    i.image_name, i.init_vector from bbox AS b, image as i where b.image_name == i.image_name and b.goggles == False
+    """
+    # make sql connection
+    # execute query
+
+    # for everything returned:
+            # combine everything into a dictionary
+            # append dictionary to list
+
+    # return list of dictionaries
+    # TODO just json.dump entire list?
+    return []
+
+# TODO don't need this method if json.dump ing all dictionaries at once
+def organize_metadata(metadata):
+    """
+    Create metadata file needed for decrypting images.
+    @param metadata: the list of dictionaries returned by get_metadata
     """
 
-    current_date = datetime.datetime.now().strftime("%m-%d-%Y")
+    with open(meta_file, 'w') as m:
+        for x in metadata:
+            # append image metadata
 
-    # TODO how should metadata be transferred? JSON file?
-    with open(current_date + '.json', 'w') as meta_file:
-        for i in imgs:
-            # 1. append image metadata
-            # 2. upload image
+            # use metadata param
             image_metadata = []
-            json.dump(image_metadata, meta_file)
-            pass
+            json.dump(image_metadata, m)
 
-        # upload metadata json file to Drive
 
+def upload_files(metadata):
+    """
+    For each filename returned by get_metadata, upload image
+    to Drive. Upload the day's metadata file.
+    @param metadata: the list of dictionaries returned by get_metadata
+    """
+
+    for image in metadata:
+        # upload image using rclone
+        pass
+
+    # upload metadata json file to Drive
+    # subprocess rclone copy meta_file [name of Drive in rclone]:
+
+
+# TODO call Seoyoung's method to email
 
 if __name__ == "__main__":
+    current_date = datetime.datetime.now().strftime("%m-%d-%Y")
+    meta_file = current_date + '.json'
+
     # call the methods
-    pass
+    metadata = get_metadata()
+    organize_metadata(metadata)
+    upload_files(metadata)

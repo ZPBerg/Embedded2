@@ -1,5 +1,7 @@
+import datetime
+
 import mysql.connector
-from .config import get_config
+from config import get_config
 from contextlib import contextmanager, closing
 
 
