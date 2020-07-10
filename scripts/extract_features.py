@@ -83,7 +83,7 @@ def get_activation(name):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run classification on a dataset')
     parser.add_argument('--directory', '-d', type=str, required=True, help='(Relative) Directory location of dataset')
-    parser.add_argument('--cuda', '-c', default=False, action='store_true', help="Enable cuda")
+    parser.add_argument('--cuda', '-c', default=False, action='store_true', help="Enable CUDA")
 
     args = parser.parse_args()
 

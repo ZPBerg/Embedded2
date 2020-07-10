@@ -1,17 +1,22 @@
+import argparse
 import datetime
 import json
 
-# from Embedded2.src.jetson.db ... import ...
+from Embedded2.src.jetson.db.db_connection import sql_cursor
+
 # from wherever import email method
 
 """
 Put this file one folder up from the stored images.
-Eg. /local/b/embedvis/imgs contains images, /local/b/embedvis/collect_images.py
+Eg. on the HELPS machine: if /local/b/embedvis/imgs contains images, 
+this file's path should be /local/b/embedvis/collect_images.py
 
 Collect images of non-goggle detections from the database.
-Upload images to Google Drive.
+Upload images and metadata to Google Drive.
 Email end-user with the Drive link.
 """
+
+METADATA_FILE = 'metadata.json'
 
 
 # TODO rename method
@@ -22,36 +27,37 @@ def get_metadata():
 
     Query:
     SELECT b.image_name, b.X_Min, b.Y_Min, b.X_Max, b.Y_Max,
-    i.image_name, i.init_vector from bbox AS b, image as i where b.image_name == i.image_name and b.goggles == False
+    i.image_name, i.init_vector from bbox AS b, image as i where b.image_name=i.image_name and b.goggles=False
     """
+
+    metadata = []
+
     # make sql connection
     # execute query
+    with sql_cursor() as cursor:
+        try:
+            cursor.execute('USE goggles')
+            cursor.execute('SELECT b.image_name, b.X_Min, b.Y_Min, b.X_Max, b.Y_Max, '
+                           'i.image_name, i.init_vector from bbox AS b, image as i where '
+                           'b.image_name=i.image_name and b.goggles=False')
 
-    # for everything returned:
-            # combine everything into a dictionary
-            # append dictionary to list
+            for (image_name, x_min, y_min, x_max, y_max, image_name, init_vector) in cursor:
+                metadata.append({'image_name': image_name,
+                                 'x_min': x_min,
+                                 'y_min': y_min,
+                                 'x_max': x_max,
+                                 'y_max': y_max,
+                                 'init_vector': init_vector
+                                 })
+        except Exception as e:
+            print(e)
 
-    # return list of dictionaries
-    # TODO just json.dump entire list?
-    return []
-
-# TODO don't need this method if json.dump ing all dictionaries at once
-def organize_metadata(metadata):
-    """
-    Create metadata file needed for decrypting images.
-    @param metadata: the list of dictionaries returned by get_metadata
-    """
-
-    with open(meta_file, 'w') as m:
-        for x in metadata:
-            # append image metadata
-
-            # use metadata param
-            image_metadata = []
-            json.dump(image_metadata, m)
+    with open(METADATA_FILE, 'w') as meta_file:
+        json.dump(metadata, meta_file)
+    return metadata
 
 
-def upload_files(metadata):
+def upload_files(metadata, dir):
     """
     For each filename returned by get_metadata, upload image
     to Drive. Upload the day's metadata file.
@@ -60,19 +66,22 @@ def upload_files(metadata):
 
     for image in metadata:
         # upload image using rclone
+        # subprocess rclone copy os.path.join(dir, image['image_name']) [Drive name]
         pass
 
     # upload metadata json file to Drive
-    # subprocess rclone copy meta_file [name of Drive in rclone]:
+    # subprocess rclone copy METADATA_FILE [Drive name]:
 
 
 # TODO call Seoyoung's method to email
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser('Collect images.')
+    parser.add_argument('--directory', '-d', type=str, required=True, help='Folder containing images to upload')
+
     current_date = datetime.datetime.now().strftime("%m-%d-%Y")
     meta_file = current_date + '.json'
 
     # call the methods
     metadata = get_metadata()
-    organize_metadata(metadata)
-    upload_files(metadata)
+    upload_files(metadata, args.directory)
