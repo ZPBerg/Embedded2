@@ -76,7 +76,7 @@ class FaceDetector:
             self.transformer = BaseTransform((self.image_shape[1], self.image_shape[0]), (104, 117, 123))
             priorbox = PriorBox(cfg, image_size=self.image_shape)
             priors = priorbox.forward()
-            self.prior_data = priors.data
+            self.prior_data = priors.data.to(device)
 
         self.detection_threshold = detection_threshold
         if cuda and torch.cuda.is_available():
@@ -148,6 +148,7 @@ class FaceDetector:
         elif self.model_name == 'retinaface':
             img = (self.transformer(image)[0]).transpose(2, 0, 1)
             img = torch.from_numpy(img).unsqueeze(0)
+            img = img.to(device)
             loc, conf, _ = self.net(
                 img)  # forward pass: Returns bounding box location, confidence and facial landmark locations
 
