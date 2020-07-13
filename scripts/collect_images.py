@@ -2,7 +2,7 @@ import argparse
 import datetime
 import json
 
-from Embedded2.src.jetson.db.db_connection import sql_cursor
+from src.jetson.db.db_connection import sql_cursor
 
 # from wherever import email method
 
@@ -43,10 +43,10 @@ def get_metadata():
 
             for (image_name, x_min, y_min, x_max, y_max, image_name, init_vector) in cursor:
                 metadata.append({'image_name': image_name,
-                                 'x_min': x_min,
-                                 'y_min': y_min,
-                                 'x_max': x_max,
-                                 'y_max': y_max,
+                                 'x_min': float(x_min),  # JSON cannot serialize Decimals.
+                                 'y_min': float(y_min),  # If there is a better way to do this, someone let me know.
+                                 'x_max': float(x_max),
+                                 'y_max': float(y_max),
                                  'init_vector': init_vector
                                  })
         except Exception as e:
@@ -57,11 +57,13 @@ def get_metadata():
     return metadata
 
 
+# TODO make folder with date to contain images and metadata file
 def upload_files(metadata, dir):
     """
     For each filename returned by get_metadata, upload image
     to Drive. Upload the day's metadata file.
     @param metadata: the list of dictionaries returned by get_metadata
+    @param dir: the folder containing the images to upload
     """
 
     for image in metadata:
@@ -78,9 +80,9 @@ def upload_files(metadata, dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('Collect images.')
     parser.add_argument('--directory', '-d', type=str, required=True, help='Folder containing images to upload')
+    args = parser.parse_args()
 
     current_date = datetime.datetime.now().strftime("%m-%d-%Y")
-    meta_file = current_date + '.json'
 
     # call the methods
     metadata = get_metadata()

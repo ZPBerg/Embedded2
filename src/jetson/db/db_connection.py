@@ -1,9 +1,9 @@
 import datetime
 
 import mysql.connector
-from config import get_config
 from contextlib import contextmanager, closing
 
+from src.jetson.db.config import get_config
 
 class Table:
     def __init__(self):
