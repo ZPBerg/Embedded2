@@ -4,6 +4,7 @@ import warnings
 from typing import List, Set, Dict, Tuple, Optional
 
 import cv2
+from enum import Enum
 from PIL import Image
 import numpy as np
 import torch
@@ -28,14 +29,16 @@ from src.jetson.models.Retinaface.data import cfg_inference as infer_params
 
 fileCount = Value('i', 0)
 encryptRet = Queue()  # Shared memory queue to allow child encryption process to return to parent
+DETECTOR_TYPES = ['blazeface', 'retinaface', 'ssd']
 
 
 class FaceDetector:
-    def __init__(self, detector: str, detection_threshold=0.7, cuda=True, set_default_dev=False):
+    def __init__(self, detector: str, detector_type: str, detection_threshold=0.7, cuda=True, set_default_dev=False):
         """
         Creates a FaceDetector object
         Args:
             detector: A string path to a trained pth file for a ssd model trained in face detection
+            detector_type: A DetectorType describing which face detector is being used
             detection_threshold: The minimum threshold for a detection to be considered valid
             cuda: Whether or not to enable CUDA
             set_default_dev: Whether or not to set the default device for PyTorch
@@ -43,17 +46,16 @@ class FaceDetector:
 
         self.device = torch.device("cpu")
 
-        if ('.pth' in detector and 'ssd' in detector):
-            from models.SSD.ssd import build_ssd
+        if detector_type == 'ssd':
+            from src.jetson.models.SSD.ssd import build_ssd
 
             self.net = build_ssd('test', 300, 2)
             self.model_name = 'ssd'
             self.net.load_state_dict(torch.load(detector, map_location=self.device))
             self.transformer = BaseTransform(self.net.size, (104, 117, 123))
 
-
-        elif ('.pth' in detector and 'blazeface' in detector):
-            from models.BlazeFace.blazeface import BlazeFace
+        elif detector_type == 'blazeface':
+            from src.jetson.models.BlazeFace.blazeface import BlazeFace
 
             self.net = BlazeFace(self.device)
             self.net.load_weights(detector)
@@ -63,8 +65,8 @@ class FaceDetector:
             self.net.min_suppression_threshold = 0.3
             self.transformer = BaseTransform(128, None)
 
-        elif ('.pth' in detector and 'mobile' in detector):
-            from models.Retinaface.retinaface import RetinaFace, load_model
+        elif detector_type == 'retinaface':
+            from src.jetson.models.Retinaface.retinaface import RetinaFace, load_model
 
             self.net = RetinaFace(cfg=cfg, phase='test')
             self.net = load_model(self.net, detector, True)
@@ -74,7 +76,7 @@ class FaceDetector:
             self.transformer = BaseTransform((self.image_shape[1], self.image_shape[0]), (104, 117, 123))
             priorbox = PriorBox(cfg, image_size=self.image_shape)
             priors = priorbox.forward()
-            self.prior_data = priors.data
+            self.prior_data = priors.data.to(device)
 
         self.detection_threshold = detection_threshold
         if cuda and torch.cuda.is_available():
@@ -98,7 +100,7 @@ class FaceDetector:
             The bounding boxes of the face(s) that were detected formatted (upper left corner(x, y) , lower right corner(x,y))
         """
 
-        if (self.model_name == 'ssd'):
+        if self.model_name == 'ssd':
             x = torch.from_numpy(self.transformer(image)[0]).permute(2, 0, 1)
             x = Variable(x.unsqueeze(0)).to(self.device)
             y = self.net(x)
@@ -109,12 +111,13 @@ class FaceDetector:
             while j < detections.shape[2] and detections[0, 1, j, 0] > self.detection_threshold:
                 pt = (detections[0, 1, j, 1:] * scale).cpu().numpy()
                 x1, y1, x2, y2 = pt
-                bboxes.append((x1, y1, x2, y2))
+                conf = detections[0, 1, j, 0].item()
+                bboxes.append((x1, y1, x2, y2, conf))
                 j += 1
 
             return bboxes
 
-        elif (self.model_name == 'blazeface'):
+        elif self.model_name == 'blazeface':
             img = self.transformer(image)[0].astype(np.float32)
 
             detections = self.net.predict_on_image(img)
@@ -130,6 +133,7 @@ class FaceDetector:
                 xmin = detections[i, 1] * image.shape[1]
                 ymax = detections[i, 2] * image.shape[0]
                 xmax = detections[i, 3] * image.shape[1]
+                conf = detections[i, 16]
 
                 img = img / 127.5 - 1.0
 
@@ -137,14 +141,15 @@ class FaceDetector:
                     kp_x = detections[i, 4 + k * 2] * img.shape[1]
                     kp_y = detections[i, 4 + k * 2 + 1] * img.shape[0]
 
-                bboxes.append((xmin, ymin, xmax, ymax))
+                bboxes.append((xmin, ymin, xmax, ymax, conf))
 
             return bboxes
 
-
-        elif (self.model_name == 'retinaface'):
+        elif self.model_name == 'retinaface':
             img = (self.transformer(image)[0]).transpose(2, 0, 1)
             img = torch.from_numpy(img).unsqueeze(0)
+            img = img.to(device)
+  
             loc, conf, _ = self.net(
                 img)  # forward pass: Returns bounding box location, confidence and facial landmark locations
 
@@ -152,9 +157,7 @@ class FaceDetector:
             boxes, scores = postprocess(boxes, conf, self.image_shape, self.detection_threshold, self.resize)
             dets = do_nms(boxes, scores, infer_params["nms_thresh"])
 
-            bboxes = []
-            for det in dets:
-                bboxes.append(tuple(dets[0][0:4]))
+            bboxes = [tuple(det[0:5]) for det in dets]
 
             return bboxes
 
@@ -192,14 +195,16 @@ class VideoCapturer(object):
 
 
 class Classifier:
-    def __init__(self, classifier):
+    def __init__(self, classifier, cuda: bool):
         '''
         Performs classification of facial region into three classes - [Goggles, Glasses, Neither]
         Args:
             classifier - Trained classifier model (Currently, mobilenetv2)
+            cuda - True if Nvidia GPU is used
         '''
         self.fps = 0
         self.classifier = classifier
+        self.device = cuda
 
     def classifyFace(self,
                      face: np.ndarray):
@@ -228,7 +233,7 @@ class Classifier:
         ])
         transformed_face = transform(pil_face)
         face_batch = transformed_face.unsqueeze(0)
-        device = torch.device("cuda:0" if args.cuda and torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda:0" if self.device and torch.cuda.is_available() else "cpu")
         with torch.no_grad():
             face_batch = face_batch.to(device)
             labels = classifier(face_batch)
@@ -253,7 +258,7 @@ class Classifier:
 
         label = []
         for box in boxes:
-            x1, y1, x2, y2 = [int(b) for b in box]
+            x1, y1, x2, y2 = [int(b) for b in box[0:4]]
             # draw boxes within the frame
             x1 = max(0, x1)
             y1 = max(0, y1)
@@ -301,7 +306,7 @@ class Encryptor(object):
             boxes: facial Coordinates
         '''
         for box in boxes:
-            x1, y1, x2, y2 = [int(b) for b in box]
+            x1, y1, x2, y2 = [int(b) for b in box[0:4]]
             # draw boxes within the frame
             x1 = max(0, x1)
             y1 = max(0, y1)
@@ -383,12 +388,18 @@ def drawFrame(boxes, frame, fps):
 if __name__ == "__main__":
     warnings.filterwarnings("once")
     parser = argparse.ArgumentParser(description="Face detection")
-    parser.add_argument('--detector', '-t', type=str, required=True, help="Path to a trained ssd .pth file")
+    parser.add_argument('--detector', '-d', type=str, required=True, help="Path to a trained face detector .pth file")
+    parser.add_argument('--detector_type', '-t', type=str, required=True, help="Type of face detector. One of "
+                                                                               "blazeface, ssd, or retinaface.")
     parser.add_argument('--cuda', '-c', default=False, action='store_true', help="Enable cuda")
     parser.add_argument('--classifier', type=str, help="Path to a trained classifier .pth file")
     parser.add_argument('--write_imgs', default=False, help='Write images to output_dir')
     parser.add_argument('--output_dir', default='encrypted_imgs', type=str, help="Where to output encrypted images")
     args = parser.parse_args()
+
+    if args.detector_type not in DETECTOR_TYPES:
+        print('Please include a valid detector type (\'blazeface\', \'ssd\', or \'retinaface\'')
+        exit(1)
 
     device = torch.device('cpu')
     if args.cuda and torch.cuda.is_available():
@@ -398,8 +409,9 @@ if __name__ == "__main__":
     g.eval()
 
     capturer = VideoCapturer()
-    detector = FaceDetector(detector=args.detector, cuda=args.cuda and torch.cuda.is_available(), set_default_dev=True)
-    classifier = Classifier(g)
+    detector = FaceDetector(detector=args.detector, detector_type=args.detector_type,
+                            cuda=args.cuda and torch.cuda.is_available(), set_default_dev=True)
+    classifier = Classifier(g, args.cuda)
     encryptor = Encryptor()
 
     run_face_detection: bool = True
