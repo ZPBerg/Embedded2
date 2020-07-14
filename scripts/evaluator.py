@@ -43,10 +43,10 @@ class Evaluator():
             torch.set_default_tensor_type('torch.FloatTensor')
             self.device = torch.device('cpu')
 
-        if os.path.exists("eval/det_results.txt"):
-            os.remove("eval/det_results.txt")
+        if os.path.exists("det_results.txt"):
+            os.remove("det_results.txt")
 
-        self.detector = FaceDetector(detector=detector, cuda=cuda and torch.cuda.is_available(),
+        self.detector = FaceDetector(detector=detector, detector_type='retinaface', cuda=cuda and torch.cuda.is_available(),
                                      set_default_dev=True)
         self.classifier = Classifier(torch.load(classifier, map_location=self.device), self.device)
         self.video_filenames = self.get_video_files(input_directory)
@@ -100,7 +100,11 @@ class Evaluator():
                 print(f"Unable to open video {self.video}")
                 continue
         self.calculate_average_class_accuracy()
-        detection_results = self.evaluate_detections(annotation_path, "eval/det_results.txt")
+
+        # ------- classification ^^^ detection vvv
+
+        # TODO why is this returning something
+        #detection_results = self.evaluate_detections(annotation_path, "det_results.txt")
 
         print(f"\n {total_videos_processed} videos processed!")
 
@@ -189,8 +193,8 @@ class Evaluator():
         else:
             average_inference_time = -1  # Empty video file
 
-        # TODO make eval/det_results.txt a global variable DETECTION_FILE
-        self.record_detections("eval/det_results.txt", bboxes)
+        # TODO make det_results.txt a global variable DETECTION_FILE
+        self.record_detections("det_results.txt", bboxes)
         return inference_dict, average_inference_time
 
     def get_class_label(self):
