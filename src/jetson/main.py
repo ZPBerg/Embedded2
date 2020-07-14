@@ -11,21 +11,21 @@ import torch
 from torch.autograd import Variable
 from torchvision import transforms
 
-from models.utils.transform import BaseTransform
-from models.utils.box_utils import decode, do_nms, postprocess
+from src.jetson.models.utils.transform import BaseTransform
+from src.jetson.models.utils.box_utils import decode, do_nms, postprocess
 
 import sys
 import os
 import inspect
 
-from AES import Encryption as AESEncryptor
+from src.jetson.AES import Encryption as AESEncryptor
 
 from threading import Thread
 import multiprocessing
 from multiprocessing import Process, Queue, Value
-from models.Retinaface.layers.functions.prior_box import PriorBox
-from models.Retinaface.data import cfg_mnet as cfg
-from models.Retinaface.data import cfg_inference as infer_params
+from src.jetson.models.Retinaface.layers.functions.prior_box import PriorBox
+from src.jetson.models.Retinaface.data import cfg_mnet as cfg
+from src.jetson.models.Retinaface.data import cfg_inference as infer_params
 
 fileCount = Value('i', 0)
 encryptRet = Queue()  # Shared memory queue to allow child encryption process to return to parent
@@ -149,6 +149,7 @@ class FaceDetector:
             img = (self.transformer(image)[0]).transpose(2, 0, 1)
             img = torch.from_numpy(img).unsqueeze(0)
             img = img.to(device)
+  
             loc, conf, _ = self.net(
                 img)  # forward pass: Returns bounding box location, confidence and facial landmark locations
 
