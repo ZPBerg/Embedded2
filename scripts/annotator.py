@@ -4,34 +4,26 @@ import argparse
 import torch
 import torch.backends.cudnn as cudnn
 import numpy as np
-from data import cfg_mnet, cfg_re50
-from layers.functions.prior_box import PriorBox
-from utils.nms.py_cpu_nms import py_cpu_nms
+from src.jetson.models.Retinaface.data.config import cfg_mnet, cfg_re50
+from src.jetson.models.Retinaface.layers.functions.prior_box import PriorBox
+from src.jetson.models.utils.box_utils import nms_numpy, decode_landm, decode
 import cv2
-from models.retinaface import RetinaFace
-from utils.box_utils import decode, decode_landm
+from src.jetson.models.Retinaface.retinaface import RetinaFace
 import time
 import json
 
-parser = argparse.ArgumentParser(description='Retinaface')
+"""
+Run the face detector model on TestVideos (on the Drive, also args.input_directory).
+Save bbox detections to SEPARATE text files for evaluation by evaluator.py
+"""
 
-parser.add_argument('-m', '--trained_model', default='./weights/Resnet50_Final.pth',
-                    type=str, help='Trained state_dict file path to open')
-parser.add_argument('--network', default='resnet50', help='Backbone network mobile0.25 or resnet50')
-parser.add_argument('--cpu', action="store_true", default=True, help='Use cpu inference')
-parser.add_argument('--confidence_threshold', default=0.5, type=float, help='confidence_threshold')
-parser.add_argument('--top_k', default=1000, type=int, help='top_k')
-parser.add_argument('--nms_threshold', default=0.05, type=float, help='nms_threshold')
-parser.add_argument('--keep_top_k', default=250, type=int, help='keep_top_k')
-parser.add_argument('-s', '--save_image', action="store_true", default=True, help='show detection results')
-parser.add_argument('--output_directory', default='ground_truth_detections_lowlight/', type=str, help='directory to store detected labels')
-parser.add_argument('--input_directory', default='test_videos/', type=str, help='directory where test videos are located')
+# TODO there's gotta be a better way than saving to text files
 
-
-args = parser.parse_args()
 CLASSES = ['Glasses/', 'Goggles/', 'Neither/']
-CONDITIONS = ['Ideal/', 'Low_lighting/', 'Occlusion_bottom/', 'Occlusion_left_right/', 'Pose_45_degrees_down/', 'Pose_45_degrees_up/',
-            'Pose_looking_left/', 'Pose_looking_right/', 'Scale_3-5m/', 'Scale_<3m/', 'Scale_>5m/']
+CONDITIONS = ['Ideal/', 'Low_lighting/', 'Occlusion_bottom/', 'Occlusion_left_right/', 'Pose_45_degrees_down/',
+              'Pose_45_degrees_up/',
+              'Pose_looking_left/', 'Pose_looking_right/', 'Scale_3-5m/', 'Scale_<3m/', 'Scale_>5m/']
+
 
 def check_keys(model, pretrained_state_dict):
     ckpt_keys = set(pretrained_state_dict.keys())
@@ -39,23 +31,23 @@ def check_keys(model, pretrained_state_dict):
     used_pretrained_keys = model_keys & ckpt_keys
     unused_pretrained_keys = ckpt_keys - model_keys
     missing_keys = model_keys - ckpt_keys
-    print('Missing keys:{}'.format(len(missing_keys)))
-    print('Unused checkpoint keys:{}'.format(len(unused_pretrained_keys)))
-    print('Used keys:{}'.format(len(used_pretrained_keys)))
+    print('Missing keys: {}'.format(len(missing_keys)))
+    print('Unused checkpoint keys: {}'.format(len(unused_pretrained_keys)))
+    print('Used keys: {}'.format(len(used_pretrained_keys)))
     assert len(used_pretrained_keys) > 0, 'load NONE from pretrained checkpoint'
     return True
 
 
 def remove_prefix(state_dict, prefix):
-    ''' Old style model is stored with all names of parameters sharing common prefix 'module.' '''
+    """ Old style model is stored with all names of parameters sharing common prefix 'module.' """
     print('remove prefix \'{}\''.format(prefix))
     f = lambda x: x.split(prefix, 1)[-1] if x.startswith(prefix) else x
     return {f(key): value for key, value in state_dict.items()}
 
 
-def load_model(model, pretrained_path, load_to_cpu):
+def load_model(model, pretrained_path, load_to_cuda):
     print('Loading pretrained model from {}'.format(pretrained_path))
-    if load_to_cpu:
+    if not load_to_cuda:
         pretrained_dict = torch.load(pretrained_path, map_location=lambda storage, loc: storage)
     else:
         device = torch.cuda.current_device()
@@ -69,18 +61,17 @@ def load_model(model, pretrained_path, load_to_cpu):
     return model
 
 
-def create_directories(root_directory, create_class_condition_directories=False):
+def create_directory(root_directory):
     if not os.path.isdir(root_directory):
         os.mkdir(root_directory)
 
 
-
 def get_storage_location(output_directory, video_filename, input_directory):
-    save_dir = output_directory + video_filename.strip(input_directory).strip('.mp4').strip('.mov').strip('.MOV').strip('.avi').split('/')[-1] + '_'
-    #create_directories(save_dir)
+    # TODO ugly filename strip
+    save_dir = os.path.join(output_directory, video_filename.strip(input_directory)
+                            .strip('.mp4').strip('.mov').strip('.MOV').strip('.avi').split('/')[-1] + '_')
 
     return save_dir
-
 
 
 def get_videos(input_directory):
@@ -88,14 +79,35 @@ def get_videos(input_directory):
     for dirName, subdirList, fileList in os.walk(input_directory):
         for filename in fileList:
             ext = '.' + filename.split('.')[-1]
-            if ext in ['.mov','.mp4','.avi', '.MOV']:
+            if ext in ['.mov', '.mp4', '.avi', '.MOV']:
                 filenames.append(dirName + '/' + filename)
 
     return filenames
 
 
 if __name__ == '__main__':
-    create_directories(args.output_directory, create_class_condition_directories=True)
+    parser = argparse.ArgumentParser(description='Retinaface')
+
+    parser.add_argument('-m', '--trained_model', default='./weights/Resnet50_Final.pth',
+                        type=str, help='Trained face detector state_dict path')
+    parser.add_argument('--network', default='resnet50', help='Backbone network. mobile0.25 or resnet50')
+    # TODO make CUDA arg instead
+    parser.add_argument('--cuda', '-c', action="store_true", default=False, help='Use CUDA')
+    parser.add_argument('--confidence_threshold', default=0.5, type=float, help='Bounding box IoU required to count as '
+                                                                                'correct')
+    parser.add_argument('--top_k', default=1000, type=int, help='top_k')
+    parser.add_argument('--nms_threshold', default=0.05, type=float, help='nms_threshold')
+    parser.add_argument('--keep_top_k', default=250, type=int, help='keep_top_k')
+    # TODO not currently used
+    parser.add_argument('-s', '--save_image', action="store_true", default=True, help='show detection results')
+    parser.add_argument('--output_directory', default='ground_truth_detections_lowlight/', type=str,
+                        help='directory to store detected labels')
+    parser.add_argument('--input_directory', default='test_videos/', type=str,
+                        help='directory where test videos are located')
+
+    args = parser.parse_args()
+
+    create_directory(args.output_directory)
 
     torch.set_grad_enabled(False)
     cfg = None
@@ -103,14 +115,17 @@ if __name__ == '__main__':
         cfg = cfg_mnet
     elif args.network == "resnet50":
         cfg = cfg_re50
-    # net and model
-    net = RetinaFace(cfg=cfg, phase = 'test')
-    net = load_model(net, args.trained_model, args.cpu)
+
+    # load the network
+    net = RetinaFace(cfg=cfg, phase='test')
+
+    # load the model weights # TODO rename method load_model
+    net = load_model(net, args.trained_model, args.cuda)
     net.eval()
     print('Finished loading model!')
     print(net)
     cudnn.benchmark = True
-    device = torch.device("cpu" if args.cpu else "cuda")
+    device = torch.device("cuda:0" if args.cuda else "cpu")
     net = net.to(device)
 
     resize = 0.4
@@ -120,9 +135,8 @@ if __name__ == '__main__':
     for video in video_files:
         cap = cv2.VideoCapture(video)
         storage_location = get_storage_location(args.output_directory, video, args.input_directory)
-        create_directories(storage_location)
-        print ("Video: ", video)
-
+        create_directory(storage_location)
+        print("Video: ", video)
 
         # testing begin
         if cap.isOpened():
@@ -132,7 +146,9 @@ if __name__ == '__main__':
                 if not ret:
                     break
                 img = np.float32(img_raw)
-                img = cv2.resize(img, (int(img.shape[1]*resize), int(img.shape[0]*resize)))
+                img = cv2.resize(img, (int(img.shape[1] * resize), int(img.shape[0] * resize)))
+
+                # TODO does this vvv code appear in Retinaface/ ? Or possibly in main.py
 
                 im_height, im_width, _ = img.shape
                 scale = torch.Tensor([img.shape[1], img.shape[0], img.shape[1], img.shape[0]])
@@ -144,7 +160,7 @@ if __name__ == '__main__':
 
                 tic = time.time()
                 loc, conf, landms = net(img)  # forward pass
-                #print('net forward time: {:.4f}'.format(time.time() - tic))
+                # print('net forward time: {:.4f}'.format(time.time() - tic))
 
                 priorbox = PriorBox(cfg, image_size=(im_height, im_width))
                 priors = priorbox.forward()
@@ -176,8 +192,7 @@ if __name__ == '__main__':
 
                 # do NMS
                 dets = np.hstack((boxes, scores[:, np.newaxis])).astype(np.float32, copy=False)
-                keep = py_cpu_nms(dets, args.nms_threshold)
-                # keep = nms(dets, args.nms_threshold,force_cpu=args.cpu)
+                keep = nms_numpy(dets, args.nms_threshold)
                 dets = dets[keep, :]
                 landms = landms[keep]
 
@@ -185,8 +200,8 @@ if __name__ == '__main__':
                 dets = dets[:args.keep_top_k, :]
                 landms = landms[:args.keep_top_k, :]
 
-                #dets = np.concatenate((dets, landms), axis=1)
-                output_file = storage_location + str(frame_number) + '.txt'
+                # dets = np.concatenate((dets, landms), axis=1)
+                output_file = os.path.join(storage_location, 'frame' + str(frame_number) + '.txt')
                 f = open(output_file, "w")
                 for detection in dets:
                     for coord in detection:

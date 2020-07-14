@@ -10,27 +10,28 @@ import torch
 from torch.autograd import Variable
 from torchvision import transforms
 
-from models.utils.transform import BaseTransform
-from models.utils.box_utils import decode, do_nms, postprocess
+from src.jetson.models.utils.transform import BaseTransform
+from src.jetson.models.utils.box_utils import decode, do_nms, postprocess
 
 import sys
 import os
 import inspect
 
-from AES import Encryption as AESEncryptor
+from src.jetson.AES import Encryption as AESEncryptor
 
 from threading import Thread
 import multiprocessing
 from multiprocessing import Process, Queue, Value
-from models.Retinaface.layers.functions.prior_box import PriorBox
-from models.Retinaface.data import cfg_mnet as cfg
-from models.Retinaface.data import cfg_inference as infer_params
+from src.jetson.models.Retinaface.layers.functions.prior_box import PriorBox
+from src.jetson.models.Retinaface.data import cfg_mnet as cfg
+from src.jetson.models.Retinaface.data import cfg_inference as infer_params
 
 fileCount = Value('i', 0)
-encryptRet = Queue() #Shared memory queue to allow child encryption process to return to parent
+encryptRet = Queue()  # Shared memory queue to allow child encryption process to return to parent
+
 
 class FaceDetector:
-    def __init__(self, detector:str, detection_threshold=0.7, cuda=True, set_default_dev=False):
+    def __init__(self, detector: str, detection_threshold=0.7, cuda=True, set_default_dev=False):
         """
         Creates a FaceDetector object
         Args:
@@ -54,7 +55,6 @@ class FaceDetector:
         elif ('.pth' in detector and 'blazeface' in detector):
             from models.BlazeFace.blazeface import BlazeFace
 
-
             self.net = BlazeFace(self.device)
             self.net.load_weights(detector)
             self.net.load_anchors("models/BlazeFace/anchors.npy")
@@ -66,16 +66,15 @@ class FaceDetector:
         elif ('.pth' in detector and 'mobile' in detector):
             from models.Retinaface.retinaface import RetinaFace, load_model
 
-            self.net = RetinaFace(cfg=cfg, phase = 'test')
+            self.net = RetinaFace(cfg=cfg, phase='test')
             self.net = load_model(self.net, detector, True)
             self.model_name = 'retinaface'
-            self.image_shape = infer_params["image_shape"]  #(H, W)
+            self.image_shape = infer_params["image_shape"]  # (H, W)
             self.resize = infer_params["resize"]
             self.transformer = BaseTransform((self.image_shape[1], self.image_shape[0]), (104, 117, 123))
             priorbox = PriorBox(cfg, image_size=self.image_shape)
             priors = priorbox.forward()
             self.prior_data = priors.data
-
 
         self.detection_threshold = detection_threshold
         if cuda and torch.cuda.is_available():
@@ -87,7 +86,6 @@ class FaceDetector:
 
         self.net.to(self.device)
         self.net.eval()
-
 
     def detect(self,
                image: np.ndarray):
@@ -147,8 +145,8 @@ class FaceDetector:
         elif (self.model_name == 'retinaface'):
             img = (self.transformer(image)[0]).transpose(2, 0, 1)
             img = torch.from_numpy(img).unsqueeze(0)
-            loc, conf, _ = self.net(img)  # forward pass: Returns bounding box location, confidence and facial landmark locations
-
+            loc, conf, _ = self.net(
+                img)  # forward pass: Returns bounding box location, confidence and facial landmark locations
 
             boxes = decode(loc.data.squeeze(0), self.prior_data, cfg['variance'])
             boxes, scores = postprocess(boxes, conf, self.image_shape, self.detection_threshold, self.resize)
@@ -159,9 +157,6 @@ class FaceDetector:
                 bboxes.append(tuple(dets[0][0:4]))
 
             return bboxes
-
-
-
 
 
 class VideoCapturer(object):
@@ -179,7 +174,6 @@ class VideoCapturer(object):
         self.t1.daemon = True
         self.t1.start()
 
-
     def update(self):
         '''Get next frame in video stream'''
         while self.running.value:
@@ -196,6 +190,7 @@ class VideoCapturer(object):
         self.running.value = False
         self.t1.join()
 
+
 class Classifier:
     def __init__(self, classifier):
         '''
@@ -207,7 +202,7 @@ class Classifier:
         self.classifier = classifier
 
     def classifyFace(self,
-                    face: np.ndarray):
+                     face: np.ndarray):
         '''
         This method initializaes the transforms and classifies the face region
         Args:
@@ -243,8 +238,8 @@ class Classifier:
         return pred
 
     def classifyFrame(self,
-                    img: np.ndarray,
-                    boxes: List[Tuple[np.float64]]):
+                      img: np.ndarray,
+                      boxes: List[Tuple[np.float64]]):
         '''
         This method loops through all the bounding boxes in an image, calls classifyFace method
         to classify face region and finally draws a box around the face.
@@ -270,8 +265,8 @@ class Classifier:
 
             label.append(int(self.classifyFace(face).data))
 
-
         return label
+
 
 class Encryptor(object):
     def __init__(self):
@@ -280,7 +275,6 @@ class Encryptor(object):
         '''
         self.encryptor = AESEncryptor()
         self.key = self.encryptor.key
-
 
     def encryptFace(self, coordinates: List[Tuple[int]],
                     img: np.ndarray):
@@ -298,8 +292,8 @@ class Encryptor(object):
 
         return encryptedImg
 
-    def encryptFrame(self, img:np.ndarray,
-                    boxes:List[Tuple[np.float64]]):
+    def encryptFrame(self, img: np.ndarray,
+                     boxes: List[Tuple[np.float64]]):
         '''
         This method takes the face coordinates, encrypts the facial region, writes encrypted image to file filesystem
         Args:
@@ -333,7 +327,7 @@ def writeImg(img, output_dir):
     global fileCount
     face_file_name = os.path.join(output_dir, f'{fileCount.value}.jpg')
 
-    #TODO: Remove this print statement after db integration
+    # TODO: Remove this print statement after db integration
     print("writing ", face_file_name)
     if args.write_imgs:
         cv2.imwrite(face_file_name, img)
@@ -370,16 +364,16 @@ def drawFrame(boxes, frame, fps):
     index = 0
     for box in boxes:
         frame = cv2.putText(frame,
-                    'label: %s' % class_names[label[index]],
-                    (int(box[0]), int(box[1]-40)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                    (0, 0, 255))
+                            'label: %s' % class_names[label[index]],
+                            (int(box[0]), int(box[1] - 40)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                            (0, 0, 255))
 
         frame = cv2.putText(frame,
-                'fps: %.3f' % fps,
-                (int(box[0]), int(box[1]-20)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5, (0, 0, 255))
+                            'fps: %.3f' % fps,
+                            (int(box[0]), int(box[1] - 20)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5, (0, 0, 255))
 
         index += 1
 
@@ -409,13 +403,13 @@ if __name__ == "__main__":
     encryptor = Encryptor()
 
     run_face_detection: bool = True
-    while run_face_detection: #main video detection loop that will iterate until ESC key is entered
+    while run_face_detection:  # main video detection loop that will iterate until ESC key is entered
         start_time = time.time()
 
         frame = capturer.get_frame()
         boxes = detector.detect(frame)
 
-        encryptedImg = frame.copy() #copy memory for encrypting image separate from unencrypted image
+        encryptedImg = frame.copy()  # copy memory for encrypting image separate from unencrypted image
 
         if len(boxes) != 0:
             p1 = Process(target=encryptWorker, args=(encryptor, encryptedImg, boxes, args.output_dir, args.write_imgs))
@@ -427,7 +421,7 @@ if __name__ == "__main__":
             fps = 1 / (time.time() - start_time)
             drawFrame(boxes, frame, fps)
 
-            #remove frame creation and drawing before deployment
+            # remove frame creation and drawing before deployment
 
             p1.join()
             if cv2.waitKey(1) == 27:

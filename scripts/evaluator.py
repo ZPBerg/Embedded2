@@ -7,21 +7,17 @@ import warnings
 import json
 import numpy as np
 
-from main import FaceDetector, Classifier
+from src.jetson.main import FaceDetector, Classifier
 
 VIDEO_EXT = ['.mov', '.mp4', '.avi', '.MOV', '.MP4', '.AVI']
 
 """
-Use this script with annotator.py . Videos to be evaluated should be in this structure:
-
-- [Top-level dir]
---- Goggles
----------- [goggle videos]
---- Glasses
----------- [glasses videos]
---- Neither
----------- [neither videos]
+Use this script with annotator.py. 
+Videos to be evaluated should be from the TestVideos folder on the Drive.
 """
+
+# TODO - TODO TODO don't do face detection? Would have to manually label faces but we're using a
+# TODO - SOTA face detection model that could just empirically be observed to work
 
 
 class Evaluator():
@@ -37,7 +33,7 @@ class Evaluator():
             detector: A string path to a .pth weights file for a face detection model
             classifier: A string path to a .pth weights file for a goggle classification model
             input_directory: Directory containing test videos to run Evaluator on
-            annotation_path: Directory containing annotation files
+            annotation_path: Directory containing annotation files (output by annotator.py)
         """
 
         if cuda and torch.cuda.is_available():
@@ -249,7 +245,7 @@ class Evaluator():
     def evaluate_detections(self, annotations_dir, detection_dir, overlap_threshold=0.5):
         """
         Calculates the recall and precision of face detection for a video.
-        TODO explain what that means... seems like overlap of x and y coords?
+        TODO explain what that means... seems like overlap of x and y coords? I.e. IoU?
         
         @param annotations_dir: directory containing annotation files (created by annotator.py)
         @param detection_dir: directory of predicted detections TODO ???
@@ -297,6 +293,7 @@ class Evaluator():
                         iw = np.maximum(ixmax - ixmin, 0.)
                         ih = np.maximum(iymax - iymin, 0.)
                         # TODO debug. inters = intersection? uni = union? Overlaps is actual value?
+                        # TODO import IoU from box_utils should work
                         inters = iw * ih
                         uni = ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) +
                                (bbox_ground_truth_detections[:, 2] - bbox_ground_truth_detections[:, 0]) *
@@ -374,7 +371,8 @@ if __name__ == "__main__":
     parser.add_argument('--output_file', type=str, default='eval/test1.json',
                         help="Name of evaluation log")
     parser.add_argument('--input_directory', type=str, required=True, help="Path to a directory containing video files")
-    parser.add_argument('--annotation_path', type=str, required=True, help="Path to annotation files")
+    parser.add_argument('--annotation_path', type=str, required=True, help="Path to a directory containing annotation "
+                                                                           "files")
     # TODO add store_true args for detection, evaluation (to do separately if desired)
 
     args = parser.parse_args()
