@@ -37,7 +37,11 @@ class FaceDetector:
         """
         Creates a FaceDetector object
         Args:
+<<<<<<< HEAD
             detector: A string path to a trained pth file for a face detection model
+=======
+            detector: A string path to a trained pth file for a ssd model trained in face detection
+>>>>>>> dc6203d0875efc46c43419aa82af51d7b93d7f6d
             detector_type: A DetectorType describing which face detector is being used
             detection_threshold: The minimum threshold for a detection to be considered valid
             cuda: Whether or not to enable CUDA
