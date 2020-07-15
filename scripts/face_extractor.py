@@ -7,11 +7,11 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
-from face_detector_threaded import FaceDetector
+from src.jetson.main import FaceDetector
 
 """
 Given a folder of images or videos, run a face detector (literally a FaceDetector) on all images 
-or videos in the folder. Detects and crop all faces in the images or every 1/rate frames from the videos. 
+or videos in the folder. Detect and crop all faces in the images or every 1/rate frames from the videos. 
 Save the resulting crops as .jpgs in an output folder. 
 """
 
@@ -27,7 +27,8 @@ def get_images(input_dir):
     @return: List of image filenames.
     """
     files = [glob(f"{input_dir}/*{e}") for e in IMAGE_EXT]
-    return files[0]
+    files = [file for subfile in files for file in subfile]
+    return files
 
 
 def get_videos(input_dir):
@@ -37,16 +38,18 @@ def get_videos(input_dir):
     @return: List of video filenames.
     """
     files = [glob(f"{input_dir}/*{e}") for e in VIDEO_EXT]
-    return files[0]
+    files = [file for subfile in files for file in subfile]
+    return files
 
 
 def crop_and_save_img(frame, file_num, output_dir):
     """Run frame through FaceDetector and save the cropped face image."""
     if frame is not None and not 0:
+        print("Searching for a face")
         boxes = face_detector.detect(frame)
         for box in boxes:
             # Get individual coordinates as integers
-            x1, y1, x2, y2 = [int(b) for b in box]
+            x1, y1, x2, y2, _ = [int(b) for b in box]
             face = frame[y1:y2, x1:x2]
             if face is None or 0 in face.shape:
                 continue
@@ -90,6 +93,7 @@ if __name__ == "__main__":
     parser.add_argument("--input_dir", default="videos", type=str, help="Input directory containing the videos/images.")
     parser.add_argument('--output_dir', default='face_imgs', type=str, help="Output directory for the extracted faces.")
     parser.add_argument('--trained_model', default='blazeface.pth', type=str, help="Path to the face detector model.")
+    parser.add_argument('--detector_type', type=str, help='One of blazeface, ssd, retinaface')
     parser.add_argument('--images', default=False, action='store_true',
                         help='Crop faces from images instead of videos.')
     parser.add_argument('--rate', default=5, type=int, help="Crop faces from every 1/rate frames of the video.")
@@ -97,7 +101,7 @@ if __name__ == "__main__":
                                                                             'are all sideways, enable this.')
     args = parser.parse_args()
 
-    face_detector = FaceDetector(trained_model=args.trained_model)
+    face_detector = FaceDetector(args.trained_model, args.detector_type)
     filenames = get_images(args.input_dir) if args.images else get_videos(args.input_dir)
 
     if not os.path.isdir(args.output_dir):

@@ -376,6 +376,7 @@ def postprocess(boxes, conf, image_shape, detection_threshold, resize_factor):
     Returns boxes and confidence scores that are above confidence threshold
     """
     scale = torch.Tensor([image_shape[1], image_shape[0], image_shape[1], image_shape[0]])
+    scale = scale.to(boxes.device)
     boxes = (boxes * scale / resize_factor).to('cpu').numpy()
     scores = conf.squeeze(0).data.cpu().numpy()[:, 1]
 

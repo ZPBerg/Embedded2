@@ -358,7 +358,7 @@ def main():
     evaluator = Evaluator(args.cuda, args.detector, args.classifier, args.input_directory, args.annotation_path)
     individual_video_results = evaluator.get_evaluator_results()
 
-    with open(args.output_file, 'w') as json_file:
+    with open(args.output_file, 'w+') as json_file:
         json.dump(individual_video_results, json_file, indent=4)
 
     print(f"\n Output saved at {args.output_file}")
@@ -372,7 +372,7 @@ if __name__ == "__main__":
     parser.add_argument('--classifier', default='model_weights/ensemble_100epochs.pth', type=str,
                         help="Path to a trained classifier .pth file")
     parser.add_argument('--cuda', '-c', default=False, action='store_true', help="Enable CUDA")
-    parser.add_argument('--output_file', type=str, default='eval/test1.json',
+    parser.add_argument('--output_file', type=str, default='results.json',
                         help="Name of evaluation log")
     parser.add_argument('--input_directory', type=str, required=True, help="Path to a directory containing video files")
     parser.add_argument('--annotation_path', type=str, required=True, help="Path to a directory containing annotation "
