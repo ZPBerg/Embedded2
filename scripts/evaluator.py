@@ -1,12 +1,14 @@
-import os
-import cv2
 import argparse
-import torch
+import json
+import os
 import time
 import warnings
-import json
-import numpy as np
 
+import cv2
+import numpy as np
+import torch
+
+from scripts.utils import check_rotation, correct_rotation
 from src.jetson.main import FaceDetector, Classifier
 
 VIDEO_EXT = ['.mov', '.mp4', '.avi', '.MOV', '.MP4', '.AVI']
@@ -21,7 +23,7 @@ Videos to be evaluated should be from the TestVideos folder on the Drive.
 
 
 class Evaluator():
-    def __init__(self, cuda, detector, classifier, input_directory, annotation_path):
+    def __init__(self, cuda, detector, detector_type, classifier, input_directory, annotation_path):
         """
         Evaluates face detection and goggle classification performance.
         Goggle Classification accuracy is given by average class accuracy and individual
@@ -46,7 +48,7 @@ class Evaluator():
         if os.path.exists("det_results.txt"):
             os.remove("det_results.txt")
 
-        self.detector = FaceDetector(detector=detector, detector_type='retinaface', cuda=cuda and torch.cuda.is_available(),
+        self.detector = FaceDetector(detector=detector, detector_type=detector_type, cuda=cuda and torch.cuda.is_available(),
                                      set_default_dev=True)
         self.classifier = Classifier(torch.load(classifier, map_location=self.device), self.device)
         self.video_filenames = self.get_video_files(input_directory)
@@ -104,6 +106,7 @@ class Evaluator():
         # ------- classification ^^^ detection vvv
 
         # TODO why is this returning something
+        # TODO make it an optional arg to evaluate face detection
         #detection_results = self.evaluate_detections(annotation_path, "det_results.txt")
 
         print(f"\n {total_videos_processed} videos processed!")
@@ -162,10 +165,15 @@ class Evaluator():
         frame_counter = 0
         start_time = time.time()
 
+        # check if the video needs to be rotated
+        rotate_code = check_rotation(self.video)
+
         while True:
             ret, img = self.cap.read()
             if not ret:
                 break
+            if rotate_code is not None:
+                correct_rotation(img, rotate_code)
             # img = cv2.resize(img, (640, 480))  #Set this to the input shape of image for faster processing. (Remember to do the same in annotator)
             frame_id = self.video.strip('.avi').strip('.mp4').strip('.MOV').strip('.mov').split('/')[-1] + "_" + str(
                 frame_counter)
@@ -355,7 +363,7 @@ class Evaluator():
 def main():
     if not args.input_directory:
         raise Exception("Invalid input directory")
-    evaluator = Evaluator(args.cuda, args.detector, args.classifier, args.input_directory, args.annotation_path)
+    evaluator = Evaluator(args.cuda, args.detector, args.detector_type, args.classifier, args.input_directory, args.annotation_path)
     individual_video_results = evaluator.get_evaluator_results()
 
     with open(args.output_file, 'w+') as json_file:
@@ -367,8 +375,9 @@ def main():
 if __name__ == "__main__":
     warnings.filterwarnings("once")
     parser = argparse.ArgumentParser(description="Face detection")
-    parser.add_argument('--detector', '-t', type=str, default='model_weights/blazeface.pth',
+    parser.add_argument('--detector', '-d', type=str, default='model_weights/blazeface.pth',
                         help="Path to a trained face detector .pth file")
+    parser.add_argument('--detector_type', '-t', type=str, help="One of blazeface, retinaface, ssd")
     parser.add_argument('--classifier', default='model_weights/ensemble_100epochs.pth', type=str,
                         help="Path to a trained classifier .pth file")
     parser.add_argument('--cuda', '-c', default=False, action='store_true', help="Enable CUDA")

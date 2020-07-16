@@ -37,11 +37,7 @@ class FaceDetector:
         """
         Creates a FaceDetector object
         Args:
-<<<<<<< HEAD
-            detector: A string path to a trained pth file for a face detection model
-=======
             detector: A string path to a trained pth file for a ssd model trained in face detection
->>>>>>> dc6203d0875efc46c43419aa82af51d7b93d7f6d
             detector_type: A DetectorType describing which face detector is being used
             detection_threshold: The minimum threshold for a detection to be considered valid
             cuda: Whether or not to enable CUDA
@@ -63,6 +59,7 @@ class FaceDetector:
 
             self.net = BlazeFace(self.device)
             self.net.load_weights(detector)
+            # TODO load_anchors doesn't work if run from face_extractor
             self.net.load_anchors("models/BlazeFace/anchors.npy")
             self.model_name = 'blazeface'
             self.net.min_score_thresh = 0.75
@@ -160,6 +157,13 @@ class FaceDetector:
             boxes = decode(loc.data.squeeze(0), self.prior_data, cfg['variance'])
             boxes, scores = postprocess(boxes, conf, self.image_shape, self.detection_threshold, self.resize)
             dets = do_nms(boxes, scores, infer_params["nms_thresh"])
+
+            # scale bbox coords back to original image size
+            for det in dets:
+                det[0] *= image.shape[1] / img.shape[3]
+                det[1] *= image.shape[0] / img.shape[2]
+                det[2] *= image.shape[1] / img.shape[3]
+                det[3] *= image.shape[0] / img.shape[2]
 
             bboxes = [tuple(det[0:5]) for det in dets]
 

@@ -1,12 +1,15 @@
 import argparse
-from glob import glob
+import math
 import os
 import warnings
+
+from glob import glob
 
 import cv2
 import numpy as np
 from tqdm import tqdm
 
+from scripts.utils import check_rotation, correct_rotation
 from src.jetson.main import FaceDetector
 
 """
@@ -27,6 +30,7 @@ def get_images(input_dir):
     @return: List of image filenames.
     """
     files = [glob(f"{input_dir}/*{e}") for e in IMAGE_EXT]
+    # convert the 2d list into a 1d list
     files = [file for subfile in files for file in subfile]
     return files
 
@@ -38,6 +42,7 @@ def get_videos(input_dir):
     @return: List of video filenames.
     """
     files = [glob(f"{input_dir}/*{e}") for e in VIDEO_EXT]
+    # convert the 2d list into a 1d list
     files = [file for subfile in files for file in subfile]
     return files
 
@@ -45,11 +50,10 @@ def get_videos(input_dir):
 def crop_and_save_img(frame, file_num, output_dir):
     """Run frame through FaceDetector and save the cropped face image."""
     if frame is not None and not 0:
-        print("Searching for a face")
         boxes = face_detector.detect(frame)
         for box in boxes:
             # Get individual coordinates as integers
-            x1, y1, x2, y2, _ = [int(b) for b in box]
+            x1, y1, x2, y2, _ = [int(math.ceil(b)) for b in box]
             face = frame[y1:y2, x1:x2]
             if face is None or 0 in face.shape:
                 continue
@@ -72,15 +76,15 @@ def crop_faces_from_videos(output_dir):
     for video_file in filenames:
         print(f"Opening {video_file}")
         video = cv2.VideoCapture(video_file)
+        rotate_code = check_rotation(video_file)
         file_len = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
 
         for frame_num in tqdm(range(file_len)):
             ret, frame = video.read()
 
             if frame_num % args.rate == 0:
-                # If the video is shot horizontally, flip it so it's in the right orientation
-                if args.horiz:
-                    frame = cv2.transpose(frame)
+                if rotate_code is not None:
+                    frame = correct_rotation(frame, rotate_code)
                 crop_and_save_img(frame, file_num, output_dir)
                 file_num += 1
 
@@ -101,6 +105,7 @@ if __name__ == "__main__":
                                                                             'are all sideways, enable this.')
     args = parser.parse_args()
 
+    # the FaceDetector will use CUDA if possible
     face_detector = FaceDetector(args.trained_model, args.detector_type)
     filenames = get_images(args.input_dir) if args.images else get_videos(args.input_dir)
 
