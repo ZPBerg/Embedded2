@@ -1,16 +1,18 @@
 import argparse
 import json
 import os
-import time
 import warnings
 
 import cv2
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from scripts.utils import check_rotation, correct_rotation
 from src.jetson.main import FaceDetector, Classifier
 
+DETECTIONS_FILE = 'det_results.txt'
+CLASSIFICATION_RESULTS_FILE = 'results.json'
 VIDEO_EXT = ['.mov', '.mp4', '.avi', '.MOV', '.MP4', '.AVI']
 
 """
@@ -18,12 +20,13 @@ Use this script with annotator.py.
 Videos to be evaluated should be from the TestVideos folder on the Drive.
 """
 
-# TODO - TODO TODO don't do face detection? Would have to manually label faces but we're using a
+# TODO - TODO TODO don't evaluate face detection? Would have to manually label faces but we're using a
 # TODO - SOTA face detection model that could just empirically be observed to work
+# TODO make comments with @param things
 
 
 class Evaluator():
-    def __init__(self, cuda, detector, detector_type, classifier, input_directory, annotation_path):
+    def __init__(self, cuda, detector, detector_type, classifier, input_directory, annotation_path, rate=1):
         """
         Evaluates face detection and goggle classification performance.
         Goggle Classification accuracy is given by average class accuracy and individual
@@ -36,6 +39,7 @@ class Evaluator():
             classifier: A string path to a .pth weights file for a goggle classification model
             input_directory: Directory containing test videos to run Evaluator on
             annotation_path: Directory containing annotation files (output by annotator.py)
+            rate: Run detection and classification on every 1/rate frames
         """
 
         if cuda and torch.cuda.is_available():
@@ -45,8 +49,8 @@ class Evaluator():
             torch.set_default_tensor_type('torch.FloatTensor')
             self.device = torch.device('cpu')
 
-        if os.path.exists("det_results.txt"):
-            os.remove("det_results.txt")
+        if os.path.exists(DETECTIONS_FILE):
+            os.remove(DETECTIONS_FILE)
 
         self.detector = FaceDetector(detector=detector, detector_type=detector_type, cuda=cuda and torch.cuda.is_available(),
                                      set_default_dev=True)
@@ -72,12 +76,13 @@ class Evaluator():
         self.condition = ''
         self.cap = ''
         self.video = ''
+        self.rate = rate
         self.evaluate(annotation_path)
 
     def evaluate(self, annotation_path: str):
         """
-        Evaluates every video file in the input directory containing test videos and
-        stores results in self.results.
+        Evaluates (classification and detection) every video file in the input directory
+        containing test videos and stores results in self.results.
         To understand the format of self.results dict, check the constructor
 
         Args:
@@ -86,7 +91,7 @@ class Evaluator():
         total_videos_processed = 0
         for video_file in self.video_filenames:
             self.video = video_file
-            print(f"Processing {self.video} ...")
+            print(f"Processing {self.video} ..., video {total_videos_processed}/{len(self.video_filenames)}")
 
             self.class_label = self.get_class_label()
             self.condition = self.get_condition()
@@ -107,7 +112,7 @@ class Evaluator():
 
         # TODO why is this returning something
         # TODO make it an optional arg to evaluate face detection
-        #detection_results = self.evaluate_detections(annotation_path, "det_results.txt")
+        #detection_results = self.evaluate_detections(annotation_path, DETECTIONS_FILE)
 
         print(f"\n {total_videos_processed} videos processed!")
 
@@ -124,21 +129,23 @@ class Evaluator():
 
     def record_results(self, result):
         """
-        Records all the results in the self.results dict
+        Records results of one video in the self.results dict
 
         Args:
-            result(List) - contains the classification accuracy and inference time
+            result(List) - contains the classification accuracy and inference time and of one video
         """
         self.results[self.class_label]['number_of_videos'] += 1
+        # below is just a running sum which gets divided by the number of videos at the end
         self.results[self.class_label]['average_class_accuracy'] += result[0]
         self.results[self.class_label]['individual_video_results'][self.video] = {}
         self.results[self.class_label]['individual_video_results'][self.video]["accuracy"] = result[0]
-        self.results[self.class_label]['individual_video_results'][self.video]["inference_time"] = result[1]
+        self.results[self.class_label]['individual_video_results'][self.video]["num_correct"] = result[1]
+        self.results[self.class_label]['individual_video_results'][self.video]["num_detections"] = result[2]
         self.results[self.class_label]['individual_video_results'][self.video]["condition"] = self.condition
 
     def record_detections(self, file, detections):
         """
-        Save detections in a file for evaluation
+        Save face detections in a file for evaluation
         Args:
             file (str): Records detections here
             detections (List): contains all the bounding boxes and confidence values
@@ -154,32 +161,27 @@ class Evaluator():
     def infer(self):
         """
         Performs inference on a video by using the face detection
-        and goggle classification models
+        and goggle classification models.
+        @param rate: How often to run detection (every 1/rate frames).
         It returns:
         1) inference_dict: the number of inferences for each class.
-        2) average_inference_time: a float containing the average inference time for the whole video
         """
         bboxes = []
         preds = []
         inference_dict = {"Goggles": 0, "Glasses": 0, "Neither": 0}
-        frame_counter = 0
-        start_time = time.time()
 
         # check if the video needs to be rotated
         rotate_code = check_rotation(self.video)
+        video_len = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        while True:
+        for frame_num in tqdm(range(video_len)):
             ret, img = self.cap.read()
-            if not ret:
-                break
-            if rotate_code is not None:
-                correct_rotation(img, rotate_code)
-            # img = cv2.resize(img, (640, 480))  #Set this to the input shape of image for faster processing. (Remember to do the same in annotator)
-            frame_id = self.video.strip('.avi').strip('.mp4').strip('.MOV').strip('.mov').split('/')[-1] + "_" + str(
-                frame_counter)
-            boxes = self.detector.detect(img)  # Also contains confidence
-            box_no_conf = []
-            if len(boxes) != 0:
+            if frame_num % self.rate == 0:
+                if rotate_code is not None:
+                    correct_rotation(img, rotate_code)
+                frame_id = self.video.strip('.avi').strip('.mp4').strip('.MOV').strip('.mov').split('/')[-1] + "_" + str(
+                    frame_num)
+                boxes = self.detector.detect(img)  # Also contains confidence
                 for box in boxes:
                     x1 = max(0, box[0])
                     y1 = max(0, box[1])
@@ -191,19 +193,12 @@ class Evaluator():
                     preds.append(label.item())
                     bboxes.append([frame_id, x1, y1, x2, y2, conf])
 
-                    inference_dict["Goggles"] += preds.count(1)
-                    inference_dict["Glasses"] += preds.count(0)
-                    inference_dict["Neither"] += preds.count(2)
+        inference_dict["Goggles"] += preds.count(1)
+        inference_dict["Glasses"] += preds.count(0)
+        inference_dict["Neither"] += preds.count(2)
 
-        total_time = time.time() - start_time
-        if frame_counter > 0:
-            average_inference_time = total_time / frame_counter
-        else:
-            average_inference_time = -1  # Empty video file
-
-        # TODO make det_results.txt a global variable DETECTION_FILE
-        self.record_detections("det_results.txt", bboxes)
-        return inference_dict, average_inference_time
+        self.record_detections(DETECTIONS_FILE, bboxes)
+        return inference_dict
 
     def get_class_label(self):
         """
@@ -246,13 +241,13 @@ class Evaluator():
         Returns the accuracy (percentage_of_correct_predictions) of the
         predictions for a video
         """
-        inferences, inference_time = self.infer()
+        inferences = self.infer()
         if sum(inferences.values()) == 0:
             percentage_of_correct_predictions = 0
         else:
             percentage_of_correct_predictions = inferences[self.class_label] / sum(inferences.values())
 
-        return percentage_of_correct_predictions, inference_time
+        return percentage_of_correct_predictions, inferences[self.class_label], sum(inferences.values())
 
     def evaluate_detections(self, annotations_dir, detection_dir, overlap_threshold=0.5):
         """
@@ -356,20 +351,7 @@ class Evaluator():
         """
         Returns the dict containing all the test results (self.results)
         """
-
         return self.results
-
-
-def main():
-    if not args.input_directory:
-        raise Exception("Invalid input directory")
-    evaluator = Evaluator(args.cuda, args.detector, args.detector_type, args.classifier, args.input_directory, args.annotation_path)
-    individual_video_results = evaluator.get_evaluator_results()
-
-    with open(args.output_file, 'w+') as json_file:
-        json.dump(individual_video_results, json_file, indent=4)
-
-    print(f"\n Output saved at {args.output_file}")
 
 
 if __name__ == "__main__":
@@ -381,15 +363,23 @@ if __name__ == "__main__":
     parser.add_argument('--classifier', default='model_weights/ensemble_100epochs.pth', type=str,
                         help="Path to a trained classifier .pth file")
     parser.add_argument('--cuda', '-c', default=False, action='store_true', help="Enable CUDA")
-    parser.add_argument('--output_file', type=str, default='results.json',
-                        help="Name of evaluation log")
     parser.add_argument('--input_directory', type=str, required=True, help="Path to a directory containing video files")
     parser.add_argument('--annotation_path', type=str, required=True, help="Path to a directory containing annotation "
                                                                            "files")
+    parser.add_argument('--rate', '-r', type=int, default=1, help='Run detection on every 1/rate frames.')
     # TODO add store_true args for detection, evaluation (to do separately if desired)
 
     args = parser.parse_args()
 
-    main()
+    if not args.input_directory:
+        raise Exception("Invalid input directory")
+    evaluator = Evaluator(args.cuda, args.detector, args.detector_type, args.classifier, args.input_directory,
+                          args.annotation_path)
+    individual_video_results = evaluator.get_evaluator_results()
+
+    with open(CLASSIFICATION_RESULTS_FILE, 'w+') as json_file:
+        json.dump(individual_video_results, json_file, indent=4)
+
+    print(f"\n Output saved at {args.output_file}")
 
     exit()

@@ -59,8 +59,8 @@ class FaceDetector:
 
             self.net = BlazeFace(self.device)
             self.net.load_weights(detector)
-            # TODO load_anchors doesn't work if run from face_extractor
-            self.net.load_anchors("models/BlazeFace/anchors.npy")
+            # assume anchors.npy is in this location relative to the class definition
+            self.net.load_anchors(os.path.join(os.path.dirname(__file__), "models/BlazeFace/anchors.npy"))
             self.model_name = 'blazeface'
             self.net.min_score_thresh = 0.75
             self.net.min_suppression_threshold = 0.3
@@ -235,7 +235,6 @@ class Classifier:
         # the same transforms as applied while training model
         transform = transforms.Compose([
             transforms.Resize(224),
-            transforms.RandomGrayscale(1),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
