@@ -20,8 +20,11 @@ from src.jetson.models.Retinaface.layers.functions.prior_box import PriorBox
 from src.jetson.models.Retinaface.data.config import cfg_mnet as cfg
 from src.jetson.models.Retinaface.data.config import cfg_inference as infer_params
 
+from src.db.data_insertion import data_insert
+
 fileCount = Value('i', 0)
-encryptRet = Queue()  # Shared memory queue to allow child encryption process to return to parent
+# Shared memory queue to allow child encryption process to return to parent
+encryptRet = Queue()
 DETECTOR_TYPES = ['blazeface', 'retinaface', 'ssd']
 
 
@@ -51,7 +54,8 @@ class FaceDetector:
 
             self.net = build_ssd('test', 300, 2)
             self.model_name = 'ssd'
-            self.net.load_state_dict(torch.load(detector, map_location=self.device))
+            self.net.load_state_dict(torch.load(
+                detector, map_location=self.device))
             self.transformer = BaseTransform(self.net.size, (104, 117, 123))
 
         elif detector_type == 'blazeface':
@@ -69,11 +73,13 @@ class FaceDetector:
             from src.jetson.models.Retinaface.retinaface import RetinaFace, load_model
 
             self.net = RetinaFace(cfg=cfg, phase='test')
-            self.net = load_model(self.net, detector, load_to_cpu=self.device == torch.device("cpu"))
+            self.net = load_model(
+                self.net, detector, load_to_cpu=self.device == torch.device("cpu"))
             self.model_name = 'retinaface'
             self.image_shape = infer_params["image_shape"]  # (H, W)
             self.resize = infer_params["resize"]
-            self.transformer = BaseTransform((self.image_shape[1], self.image_shape[0]), (104, 117, 123))
+            self.transformer = BaseTransform(
+                (self.image_shape[1], self.image_shape[0]), (104, 117, 123))
             priorbox = PriorBox(cfg, image_size=self.image_shape)
             priors = priorbox.forward()
             self.prior_data = priors.data.to(self.device)
@@ -98,7 +104,8 @@ class FaceDetector:
             x = Variable(x.unsqueeze(0)).to(self.device)
             y = self.net(x)
             detections = y.data
-            scale = torch.Tensor([image.shape[1], image.shape[0], image.shape[1], image.shape[0]])
+            scale = torch.Tensor(
+                [image.shape[1], image.shape[0], image.shape[1], image.shape[0]])
             bboxes = []
             j = 0
             while j < detections.shape[2] and detections[0, 1, j, 0] > self.detection_threshold:
@@ -145,8 +152,10 @@ class FaceDetector:
             loc, conf, _ = self.net(
                 img)  # forward pass: Returns bounding box location, confidence and facial landmark locations
 
-            boxes = decode(loc.data.squeeze(0), self.prior_data, cfg['variance'])
-            boxes, scores = postprocess(boxes, conf, self.image_shape, self.detection_threshold, self.resize)
+            boxes = decode(loc.data.squeeze(
+                0), self.prior_data, cfg['variance'])
+            boxes, scores = postprocess(
+                boxes, conf, self.image_shape, self.detection_threshold, self.resize)
             dets = do_nms(boxes, scores, infer_params["nms_thresh"])
 
             bboxes = [tuple(det[0:5]) for det in dets]
@@ -221,11 +230,13 @@ class Classifier:
             transforms.Resize(224),
             transforms.RandomGrayscale(1),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
+                                 0.229, 0.224, 0.225]),
         ])
         transformed_face = transform(pil_face)
         face_batch = transformed_face.unsqueeze(0)
-        device = torch.device("cuda:0" if self.device and torch.cuda.is_available() else "cpu")
+        device = torch.device(
+            "cuda:0" if self.device and torch.cuda.is_available() else "cpu")
         with torch.no_grad():
             face_batch = face_batch.to(device)
             labels = classifier(face_batch)
@@ -380,17 +391,23 @@ def drawFrame(boxes, frame, fps):
 if __name__ == "__main__":
     warnings.filterwarnings("once")
     parser = argparse.ArgumentParser(description="Face detection")
-    parser.add_argument('--detector', '-d', type=str, required=True, help="Path to a trained face detector .pth file")
+    parser.add_argument('--detector', '-d', type=str, required=True,
+                        help="Path to a trained face detector .pth file")
     parser.add_argument('--detector_type', '-t', type=str, required=True, help="Type of face detector. One of "
                                                                                "blazeface, ssd, or retinaface.")
-    parser.add_argument('--cuda', '-c', default=False, action='store_true', help="Enable cuda")
-    parser.add_argument('--classifier', type=str, help="Path to a trained classifier .pth file")
-    parser.add_argument('--write_imgs', default=False, help='Write images to output_dir')
-    parser.add_argument('--output_dir', default='encrypted_imgs', type=str, help="Where to output encrypted images")
+    parser.add_argument('--cuda', '-c', default=False,
+                        action='store_true', help="Enable cuda")
+    parser.add_argument('--classifier', type=str,
+                        help="Path to a trained classifier .pth file")
+    parser.add_argument('--write_imgs', default=False,
+                        help='Write images to output_dir')
+    parser.add_argument('--output_dir', default='encrypted_imgs',
+                        type=str, help="Where to output encrypted images")
     args = parser.parse_args()
 
     if args.detector_type not in DETECTOR_TYPES:
-        print('Please include a valid detector type (\'blazeface\', \'ssd\', or \'retinaface\'')
+        print(
+            'Please include a valid detector type (\'blazeface\', \'ssd\', or \'retinaface\'')
         exit(1)
 
     device = torch.device('cpu')
@@ -413,10 +430,12 @@ if __name__ == "__main__":
         frame = capturer.get_frame()
         boxes = detector.detect(frame)
 
-        encryptedImg = frame.copy()  # copy memory for encrypting image separate from unencrypted image
+        # copy memory for encrypting image separate from unencrypted image
+        encryptedImg = frame.copy()
 
         if len(boxes) != 0:
-            p1 = Process(target=encryptWorker, args=(encryptor, encryptedImg, boxes, args.output_dir, args.write_imgs))
+            p1 = Process(target=encryptWorker, args=(
+                encryptor, encryptedImg, boxes, args.output_dir, args.write_imgs))
             p1.daemon = True
             p1.start()
 

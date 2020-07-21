@@ -13,6 +13,7 @@ Config Specification:
     FTPPASS : remote storage password
 """
 
+
 def get_config():
     """Returns database connection information
 

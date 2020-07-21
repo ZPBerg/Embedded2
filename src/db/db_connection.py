@@ -1,5 +1,7 @@
 import mysql.connector
-from .config import get_config
+import datetime
+
+from src.db.config import get_config
 from contextlib import contextmanager, closing
 
 
@@ -13,20 +15,18 @@ class IMAGE(Table):
     Class name must match exactly the spelling of the corresponding table in database
 
     To insert into database table using this class, use this class as input for function sql_insert:
-        sql_insert(IMAGE('image_name', 'image_date', 'image_time', 'init_vector'))
+        sql_insert(IMAGE('image_name', 'image_date', 'image_time'))
 
         Args:
             image_name (string) : name of image
             image_date (datetime obj) : date image was taken
             image_time (datetime obj) : time image was taken
-            init_vector (string) : decryption key for encrypted image
     """
 
-    def __init__(self, image_name: str, image_date: datetime, image_time: datetime, init_vector: str):
+    def __init__(self, image_name: str, image_date: datetime, image_time: datetime):
         self.Image_Name = image_name
         self.Image_Date = image_date
         self.Image_Time = image_time
-        self.Init_Vector = init_vector
 
 
 class BBOX(Table):
@@ -34,10 +34,10 @@ class BBOX(Table):
     Class name must match exactly the spelling of the corresponding table in database
 
     To insert into database table using this class, use this class as input for function sql_insert:
-        sql_insert(BBOX(xmin, ymin, xmax, ymax, conf, goggles))
+        sql_insert(BBOX(xmin, ymin, xmax, ymax, conf, goggles, 'init_vector'))
 
         Args:
-        
+
             xmin (float) : lower left x-coordinate of bounding box
             ymin (float) : lower left y-coordinate of bounding box
             xmax (float) : upper right x-coordinate of bouding box
@@ -45,9 +45,10 @@ class BBOX(Table):
             conf (float) : confidence score for bounding box
             goggles (bool) : whether goggles were detected in bounding box
             image_name (string): name of image that contains the bounding box
+            init_vector (string) : decryption key for encrypted bounding box
     """
 
-    def __init__(self, xmin: int, ymin: int, xmax: int, ymax: int, conf: int, goggles: int, image_name: str):
+    def __init__(self, xmin: int, ymin: int, xmax: int, ymax: int, conf: int, goggles: int, image_name: str, init_vector: str):
         self.X_Min = xmin
         self.Y_Min = ymin
         self.X_Max = xmax
@@ -55,6 +56,7 @@ class BBOX(Table):
         self.Confidence = conf
         self.Goggles = goggles
         self.Image_Name = image_name
+        self.Init_Vector = init_vector
 
 
 @contextmanager
@@ -65,7 +67,7 @@ def sql_connection():
         sql connection: sql connector object to the sql database
     """
     conn_info = get_config()
-        
+
     connection = mysql.connector.connect(
         host=conn_info["SQL_HOST"],
         user=conn_info["USER_NAME"],
