@@ -2,10 +2,15 @@ import cv2
 import ffmpeg
 
 """
+Miscellaneous utility functions that apply to multiple scripts.
+"""
+
+
+"""
 check_rotation and correct_rotation adapted from 
 https://stackoverflow.com/questions/53097092/frame-from-video-is-upside-down-after-extracting
 to handle the fact that some videos store rotation metadata while others do not,
-and OpenCV can't tell the difference
+and OpenCV can't tell the difference.
 """
 
 

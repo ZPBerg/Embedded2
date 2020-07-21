@@ -6,8 +6,10 @@ import warnings
 import cv2
 import numpy as np
 import torch
+import torchvision
 from tqdm import tqdm
 
+from scripts.goggle_classifier import get_model
 from scripts.utils import check_rotation, correct_rotation
 from src.jetson.main import FaceDetector, Classifier
 
@@ -54,7 +56,11 @@ class Evaluator():
 
         self.detector = FaceDetector(detector=detector, detector_type=detector_type, cuda=cuda and torch.cuda.is_available(),
                                      set_default_dev=True)
-        self.classifier = Classifier(torch.load(classifier, map_location=self.device), self.device)
+        # TODO check state_dict vs. not
+        model = get_model()
+        model.load_state_dict(torch.load(classifier, map_location=self.device))
+        self.classifier = Classifier(model, self.device)
+        #self.classifier = Classifier(torch.load(classifier, map_location=self.device), self.device)
         self.video_filenames = self.get_video_files(input_directory)
         self.results = {'Goggles':
                             {'average_class_accuracy': 0.0,
@@ -76,6 +82,7 @@ class Evaluator():
         self.condition = ''
         self.cap = ''
         self.video = ''
+        self.video_len = 0
         self.rate = rate
         self.evaluate(annotation_path)
 
@@ -102,10 +109,10 @@ class Evaluator():
                 self.record_results(classification_result)
                 total_videos_processed += 1
                 print(f"{self.video} : Done")
-
             else:
                 print(f"Unable to open video {self.video}")
                 continue
+
         self.calculate_average_class_accuracy()
 
         # ------- classification ^^^ detection vvv
@@ -115,126 +122,6 @@ class Evaluator():
         #detection_results = self.evaluate_detections(annotation_path, DETECTIONS_FILE)
 
         print(f"\n {total_videos_processed} videos processed!")
-
-    def calculate_average_class_accuracy(self):
-        """
-        Calculates the average class accuracy for each class and stores it in the
-        self.results dict.
-        """
-        for class_label in self.results:
-            if self.results[class_label]['number_of_videos'] > 0:
-                self.results[class_label]['average_class_accuracy'] = self.results[class_label][
-                                                                          'average_class_accuracy'] / \
-                                                                      self.results[class_label]['number_of_videos']
-
-    def record_results(self, result):
-        """
-        Records results of one video in the self.results dict
-
-        Args:
-            result(List) - contains the classification accuracy and inference time and of one video
-        """
-        self.results[self.class_label]['number_of_videos'] += 1
-        # below is just a running sum which gets divided by the number of videos at the end
-        self.results[self.class_label]['average_class_accuracy'] += result[0]
-        self.results[self.class_label]['individual_video_results'][self.video] = {}
-        self.results[self.class_label]['individual_video_results'][self.video]["accuracy"] = result[0]
-        self.results[self.class_label]['individual_video_results'][self.video]["num_correct"] = result[1]
-        self.results[self.class_label]['individual_video_results'][self.video]["num_detections"] = result[2]
-        self.results[self.class_label]['individual_video_results'][self.video]["condition"] = self.condition
-
-    def record_detections(self, file, detections):
-        """
-        Save face detections in a file for evaluation
-        Args:
-            file (str): Records detections here
-            detections (List): contains all the bounding boxes and confidence values
-        """
-        f = open(file, "a+")
-        for detection in detections:
-            for element in detection:
-                f.write(str(element))
-                f.write("|")
-            f.write("\n")
-        f.close()
-
-    def infer(self):
-        """
-        Performs inference on a video by using the face detection
-        and goggle classification models.
-        @param rate: How often to run detection (every 1/rate frames).
-        It returns:
-        1) inference_dict: the number of inferences for each class.
-        """
-        bboxes = []
-        preds = []
-        inference_dict = {"Goggles": 0, "Glasses": 0, "Neither": 0}
-
-        # check if the video needs to be rotated
-        rotate_code = check_rotation(self.video)
-        video_len = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-        for frame_num in tqdm(range(video_len)):
-            ret, img = self.cap.read()
-            if frame_num % self.rate == 0:
-                if rotate_code is not None:
-                    correct_rotation(img, rotate_code)
-                frame_id = self.video.strip('.avi').strip('.mp4').strip('.MOV').strip('.mov').split('/')[-1] + "_" + str(
-                    frame_num)
-                boxes = self.detector.detect(img)  # Also contains confidence
-                for box in boxes:
-                    x1 = max(0, box[0])
-                    y1 = max(0, box[1])
-                    x2 = min(img.shape[1], box[2])
-                    y2 = min(img.shape[0], box[3])
-                    conf = box[4]
-                    face = img[int(y1):int(y2), int(x1):int(x2), :]
-                    label = self.classifier.classifyFace(face)
-                    preds.append(label.item())
-                    bboxes.append([frame_id, x1, y1, x2, y2, conf])
-
-        inference_dict["Goggles"] += preds.count(1)
-        inference_dict["Glasses"] += preds.count(0)
-        inference_dict["Neither"] += preds.count(2)
-
-        self.record_detections(DETECTIONS_FILE, bboxes)
-        return inference_dict
-
-    def get_class_label(self):
-        """
-        Get class label [Goggles / Glasses / Neither] that the image belongs to
-        """
-        if '/Goggles/' in self.video or '/goggles/' in self.video:
-            class_label = 'Goggles'
-        elif '/Glasses/' in self.video or '/glasses/' in self.video:
-            class_label = 'Glasses'
-        else:
-            class_label = 'Neither'
-
-        return class_label
-
-    def get_condition(self):
-        """
-        Get condition [Ideal, low_lighting etc. ] that the image belongs to
-        """
-        return self.video.split('/')[-2]
-
-    def get_ground_truth_detections(self, directory):
-        """
-        Get ground truth detection labels (from annotation file)
-        """
-        ground_truths = {}
-
-        for file in os.listdir(directory):
-            f = open(directory + file, "r")
-            key = file.strip('.txt')
-            content = f.readlines()
-            f.close()
-
-            content = [list(map(float, x.strip(' \n').split(' '))) for x in content]
-            ground_truths[key] = content
-
-        return ground_truths
 
     def evaluate_classifications(self):
         """
@@ -247,23 +134,25 @@ class Evaluator():
         else:
             percentage_of_correct_predictions = inferences[self.class_label] / sum(inferences.values())
 
-        return percentage_of_correct_predictions, inferences[self.class_label], sum(inferences.values())
+        return percentage_of_correct_predictions, inferences, sum(inferences.values())
 
-    def evaluate_detections(self, annotations_dir, detection_dir, overlap_threshold=0.5):
+    def evaluate_detections(self, ground_truth_detections_file, predicted_detections_file, overlap_threshold=0.5):
         """
         Calculates the recall and precision of face detection for a video.
         TODO explain what that means... seems like overlap of x and y coords? I.e. IoU?
-        
-        @param annotations_dir: directory containing annotation files (created by annotator.py)
-        @param detection_dir: directory of predicted detections TODO ???
-        @param overlap_threshold: greater than threshold counts as correct, less than is incorrect
+
+        @param ground_truth_detections_file: file containing actual face detections (created by annotator.py)
+        @param predicted_detections_file: file containing predicted face detections
+        @param overlap_threshold: IoU greater than threshold counts as correct, less than is incorrect
         """
 
-        ground_truth_detections = self.get_ground_truth_detections(annotations_dir)
-        with open(detection_dir, 'r') as f:
-            # TODO verify variable name accurate
-            predicted_detections = f.readlines()
+        with open(ground_truth_detections_file) as detect_file:
+            ground_truth_detections = json.load(detect_file)
 
+        with open(predicted_detections_file, 'r') as prediction_file:
+            predicted_detections = json.load(prediction_file)
+
+        # TODO fix below based on detections format
         total_ground_truths = 0
         for frame_id in ground_truth_detections:
             total_ground_truths += len(ground_truth_detections[frame_id])
@@ -334,6 +223,112 @@ class Evaluator():
 
         return precision[len(precision)], recall[len(recall)]  # final precision, recall
 
+    def calculate_average_class_accuracy(self):
+        """
+        Calculates the average class accuracy for each class and stores it in self.results
+        """
+        for class_label in self.results:
+            if self.results[class_label]['number_of_videos'] > 0:
+                self.results[class_label]['average_class_accuracy'] = self.results[class_label][
+                                                                          'average_class_accuracy'] / \
+                                                                      self.results[class_label]['number_of_videos']
+
+    def record_results(self, result):
+        """
+        Records results of one video in the self.results dict
+
+        @param result(List) - contains the classification accuracy,
+        number of predictions for each label, number of detections
+        """
+        self.results[self.class_label]['number_of_videos'] += 1
+        # below is just a running sum which gets divided by the number of videos at the end
+        self.results[self.class_label]['average_class_accuracy'] += result[0]
+        self.results[self.class_label]['individual_video_results'][self.video] = {}
+        self.results[self.class_label]['individual_video_results'][self.video]["accuracy"] = result[0]
+        self.results[self.class_label]['individual_video_results'][self.video]["glasses"] = result[1]['Glasses']
+        self.results[self.class_label]['individual_video_results'][self.video]["goggles"] = result[1]['Goggles']
+        self.results[self.class_label]['individual_video_results'][self.video]["neither"] = result[1]['Neither']
+        self.results[self.class_label]['individual_video_results'][self.video]["num_detections"] = result[2]
+        self.results[self.class_label]['individual_video_results'][self.video]["num_frames"] = self.video_len
+        self.results[self.class_label]['individual_video_results'][self.video]["condition"] = self.condition
+
+    def record_detections(self, file, detections):
+        """
+        Save face detections in a file for evaluation
+        TODO improve how this is stored
+        Args:
+            file (str): Records detections here
+            detections (List): contains all the bounding boxes and confidence values
+        """
+        f = open(file, "a+")
+        for detection in detections:
+            for element in detection:
+                f.write(str(element))
+                f.write("|")
+            f.write("\n")
+        f.close()
+
+    def infer(self):
+        """
+        Performs inference on a video using the face detection
+        and goggle classification models.
+        @param rate: How often to run detection (every 1/rate frames).
+        It returns:
+        1) inference_dict: the number of inferences for each class.
+        """
+        bboxes = []
+        preds = []
+        inference_dict = {"Goggles": 0, "Glasses": 0, "Neither": 0}
+
+        # check if the video needs to be rotated
+        rotate_code = check_rotation(self.video)
+        self.video_len = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        for frame_num in tqdm(range(self.video_len)):
+            ret, img = self.cap.read()
+            if frame_num % self.rate == 0 and img is not None:
+                if rotate_code is not None:
+                    correct_rotation(img, rotate_code)
+                frame_id = self.video.strip('.avi').strip('.mp4').strip('.MOV').strip('.mov').split('/')[-1] + "_" + str(
+                    frame_num)
+                boxes = self.detector.detect(img)  # Also contains confidence
+                for box in boxes:
+                    x1 = max(0, box[0])
+                    y1 = max(0, box[1])
+                    x2 = min(img.shape[1], box[2])
+                    y2 = min(img.shape[0], box[3])
+                    conf = box[4]
+                    face = img[int(y1):int(y2), int(x1):int(x2), :]
+                    label = self.classifier.classifyFace(face)
+                    preds.append(label.item())
+                    bboxes.append([frame_id, x1, y1, x2, y2, conf])
+
+        inference_dict["Glasses"] += preds.count(0)
+        inference_dict["Goggles"] += preds.count(1)
+        inference_dict["Neither"] += preds.count(2)
+
+        self.record_detections(DETECTIONS_FILE, bboxes)
+        return inference_dict
+
+    def get_class_label(self):
+        """
+        Get class label [Goggles / Glasses / Neither] that the image belongs to
+        """
+        if '/Goggles/' in self.video or '/goggles/' in self.video:
+            class_label = 'Goggles'
+        elif '/Glasses/' in self.video or '/glasses/' in self.video:
+            class_label = 'Glasses'
+        else:
+            class_label = 'Neither'
+
+        return class_label
+
+    def get_condition(self):
+        """
+        Get condition [Ideal, low_lighting etc. ] that the image belongs to
+        """
+        return self.video.split('/')[-2]
+
     def get_video_files(self, input_directory: str):
         """
         Gets all the video files in the input directory
@@ -380,6 +375,6 @@ if __name__ == "__main__":
     with open(CLASSIFICATION_RESULTS_FILE, 'w+') as json_file:
         json.dump(individual_video_results, json_file, indent=4)
 
-    print(f"\n Output saved at {args.output_file}")
+    print(f"\n Output saved at {CLASSIFICATION_RESULTS_FILE}")
 
     exit()

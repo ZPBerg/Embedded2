@@ -17,7 +17,7 @@ Run the face detector model on TestVideos (on the Drive, also args.input_directo
 Save bbox detections to SEPARATE text files for evaluation by evaluator.py
 """
 
-# TODO there's gotta be a better way than saving to 47,000+ text files
+# TODO output large json file or something
 # TODO add instructions for running annotator and evaluator
 
 CLASSES = ['Glasses/', 'Goggles/', 'Neither/']
