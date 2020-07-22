@@ -25,6 +25,7 @@ Videos to be evaluated should be from the TestVideos folder on the Drive.
 # TODO - TODO TODO don't evaluate face detection? Would have to manually label faces but we're using a
 # TODO - SOTA face detection model that could just empirically be observed to work
 # TODO make comments with @param things
+# TODO load detections as csv file
 
 
 class Evaluator():

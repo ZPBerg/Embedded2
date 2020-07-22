@@ -20,7 +20,7 @@ Save the resulting crops as .jpgs in an output folder.
 
 warnings.filterwarnings('once')
 IMAGE_EXT = ['.jpg', '.JPG', '.png', '.PNG']
-VIDEO_EXT = ['.mp4', '.MP4', 'mov', '.MOV']
+VIDEO_EXT = ['.mp4', '.MP4', 'mov', '.MOV', '.avi', '.AVI']
 
 
 def get_images(input_dir):
