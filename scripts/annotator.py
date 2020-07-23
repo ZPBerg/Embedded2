@@ -8,7 +8,7 @@ import cv2
 import torch
 from tqdm import tqdm
 
-from src.jetson.main import FaceDetector
+from src.jetson.face_detector import FaceDetector
 from scripts.utils import check_rotation, correct_rotation
 
 """

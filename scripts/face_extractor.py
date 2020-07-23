@@ -10,7 +10,7 @@ import numpy as np
 from tqdm import tqdm
 
 from scripts.utils import check_rotation, correct_rotation
-from src.jetson.main import FaceDetector
+from src.jetson.face_detector import FaceDetector
 
 """
 Given a folder of images or videos, run a face detector (literally a FaceDetector) on all images 

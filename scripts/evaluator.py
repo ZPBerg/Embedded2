@@ -10,7 +10,8 @@ import torch
 from tqdm import tqdm
 
 from scripts.goggle_classifier import get_model
-from src.jetson.main import FaceDetector, Classifier
+from src.jetson.face_detector import FaceDetector
+from src.jetson.classifier import Classifier
 from scripts.utils import check_rotation, correct_rotation, bbox_iou
 
 PRED_DETECTIONS_FILE = 'detection_predictions.csv'
