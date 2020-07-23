@@ -3,6 +3,7 @@ import datetime
 
 from src.db.config import get_config
 from contextlib import contextmanager, closing
+import datetime
 
 
 class Table:

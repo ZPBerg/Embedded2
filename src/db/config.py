@@ -1,4 +1,5 @@
 import json
+import os
 
 config = None
 """Cached configuation info
@@ -25,7 +26,7 @@ def get_config():
     if config:
         return config
 
-    with open('login.json') as file:
+    with open(os.path.join(os.path.dirname(__file__), 'login.json')) as file:
         config = json.load(file)
 
     return config
