@@ -76,7 +76,13 @@ if __name__ == '__main__':
             if rotate_code is not None:
                 frame = correct_rotation(frame, rotate_code)
             boxes = detector.detect(frame)
-            detections.append([video, frame_num, boxes])
+            detection = [video, frame_num]
+
+            # each box is one set of face coords
+            for box in boxes:
+                for b in box:
+                    detection.append(b)
+            detections.append(detection)
 
         # save detections to csv one video at a time
         with open(DETECTIONS_FILE, "a") as f:
