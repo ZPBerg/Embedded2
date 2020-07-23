@@ -1,4 +1,3 @@
-import argparse
 import os
 import time
 import datetime
@@ -8,8 +7,6 @@ from multiprocessing import Process, Queue, Value
 
 import cv2
 import torch
-from torch.autograd import Variable
-from torchvision import transforms
 
 from src.jetson.face_detector import FaceDetector 
 from src.jetson.video_capturer import VideoCapturer

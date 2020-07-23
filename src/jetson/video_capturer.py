@@ -32,7 +32,7 @@ def gstreamer_pipeline(
 
 
 class VideoCapturer(object):
-    def __init__(self, gstreamer, dev=1):
+    def __init__(self, gstreamer, dev=0):
         """
         This class captures videos using open-cv's VideoCapture object
         Args:
