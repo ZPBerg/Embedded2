@@ -7,25 +7,21 @@ import warnings
 import cv2
 import numpy as np
 import torch
-import torchvision
 from tqdm import tqdm
 
 from scripts.goggle_classifier import get_model
-from scripts.utils import check_rotation, correct_rotation
 from src.jetson.main import FaceDetector, Classifier
-from src.jetson.models.utils.box_utils import matrix_iou
+from scripts.utils import check_rotation, correct_rotation, bbox_iou
 
-PRED_DETECTIONS_FILE = 'detection_predictions.txt'
+PRED_DETECTIONS_FILE = 'detection_predictions.csv'
 CLASSIFICATION_RESULTS_FILE = 'results.json'
 VIDEO_EXT = ['.mov', '.mp4', '.avi', '.MOV', '.MP4', '.AVI']
 
 """
-Use this script with annotator.py. 
+Evaluate classification and (optionally) face detection ability on a set of videos.
 Videos to be evaluated should be from the TestVideos folder on the Drive.
+To compare face detection models, run annotator.py first.
 """
-
-
-# TODO make comments with @param things
 
 
 class Evaluator():
@@ -98,7 +94,6 @@ class Evaluator():
         Evaluates (classification and detection) every video file in the input directory
         containing test videos and stores results in self.results.
         To understand the format of self.results dict, check the constructor
-
         """
         total_videos_processed = 0
         for video_file in self.video_filenames:
@@ -119,9 +114,8 @@ class Evaluator():
 
         self.calculate_average_class_accuracy()
 
-        # TODO why is this returning something
         if self.det_file is not None:
-            detection_results = self.evaluate_detections(self.det_file, PRED_DETECTIONS_FILE)
+            self.evaluate_detections(self.det_file, PRED_DETECTIONS_FILE)
 
         print(f"\n {total_videos_processed} videos processed!")
 
@@ -140,7 +134,7 @@ class Evaluator():
     def evaluate_detections(self, ground_truth_detections_file, predicted_detections_file):
         """
         Calculates the recall and precision of face detection for a video.
-        TODO explain what that means... seems like overlap of x and y coords? I.e. IoU?
+        Defined by 0.5 IoU or greater with ground truth bounding box.
 
         @param ground_truth_detections_file: file containing actual face detections (created by annotator.py)
         @param predicted_detections_file: file containing predicted face detections
@@ -158,70 +152,26 @@ class Evaluator():
             for row in reader:
                 predicted_detections.append(row)
 
-        total_ground_truths = len(ground_truth_detections)
         true_pos = 0
         false_pos = 0
 
         for d in predicted_detections:
-            """            
-            splitlines = [x.strip().split('|') for x in predicted_detections]
-            image_ids = [x[0] for x in splitlines]
-            confidence = np.array([float(x[5]) for x in splitlines])
-            bboxes = np.array([[float(z) for z in x[1:5]] for x in splitlines])
-
-            # sort by confidence
-            sorted_ind = np.argsort(-confidence)
-            sorted_scores = np.sort(-confidence)
-            bboxes = bboxes[sorted_ind, :]
-            image_ids = [image_ids[x] for x in sorted_ind]
-            """
-
-            """# TODO for frame in frames?
-            for d in range(nd):
-                try:
-                    bbox = bboxes[d, :].astype(float)
-                    max_overlap = -np.inf
-                    bbox_ground_truth_detections = np.asarray(ground_truth_detections[image_ids[d]], dtype=np.float32)
-                    if bbox_ground_truth_detections.size > 0:
-                        # TODO max and min variable names are backwards?
-                        ixmin = np.maximum(bbox_ground_truth_detections[:, 0], bbox[0])
-                        iymin = np.maximum(bbox_ground_truth_detections[:, 1], bbox[1])
-                        ixmax = np.minimum(bbox_ground_truth_detections[:, 2], bbox[2])
-                        iymax = np.minimum(bbox_ground_truth_detections[:, 3], bbox[3])
-                        iw = np.maximum(ixmax - ixmin, 0.)
-                        ih = np.maximum(iymax - iymin, 0.)
-                        # TODO debug. inters = intersection? uni = union? Overlaps is actual value?
-                        # TODO import IoU from box_utils should work
-                        inters = iw * ih
-                        uni = ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) +
-                               (bbox_ground_truth_detections[:, 2] - bbox_ground_truth_detections[:, 0]) *
-                               (bbox_ground_truth_detections[:, 3] - bbox_ground_truth_detections[:, 1]) - inters)
-                        overlaps = inters / uni
-                        max_overlap = np.max(overlaps)
-                        # jmax = np.argmax(overlaps)
-
-                    if max_overlap > 0.5:
-                        true_pos += 1.
-                    else:
-                        false_pos += 1.
-            """
-
             # only look at frames where a face was detected
             if len(d) > 2:
                 ground_truth_bboxes = None
                 pred_bboxes = d[2:6]
 
                 # get matching frame detection from the ground_truth
-                for video_name, frame_num, _ in ground_truth_detections:
-                    if video_name == d[0] and frame_num == d[1]:
-                        # if the ground truth also detected a face in this frame
-                        if len(_) > 0:
-                            ground_truth_bboxes = _
+                for detection in ground_truth_detections:
+                    if detection[0] == d[0] and detection[1] == d[1]:
+                        if len(detection) > 2:
+                            # if the ground truth also detected a face in this frame
+                            ground_truth_bboxes = detection[2:6]
                         break
 
                 if ground_truth_bboxes is not None:
                     # 0.5 IoU is commonly used to compare bounding boxes
-                    if matrix_iou(np.asarray(pred_bboxes), np.asarray(ground_truth_bboxes)) > 0.5:
+                    if bbox_iou(pred_bboxes, ground_truth_bboxes) > 0.5:
                         true_pos += 1
                     else:
                         false_pos += 1
@@ -229,16 +179,16 @@ class Evaluator():
                     # ground truth did not detect a face, but the prediction did
                     false_pos += 1
 
-            print("Total ground truths: ", total_ground_truths)
+        total_ground_truths = len(ground_truth_detections)
+        print("Total ground truths: ", total_ground_truths)
 
-            recall = true_pos / float(total_ground_truths)
-            # avoid divide by zero in case the first detection matches a difficult ground truth
-            precision = true_pos / np.maximum(true_pos + false_pos, np.finfo(np.float64).eps)
+        recall = true_pos / float(total_ground_truths)
+        # avoid divide by zero in case the first detection matches a difficult ground truth
+        precision = true_pos / np.maximum(true_pos + false_pos, np.finfo(np.float64).eps)
 
         print("Precision: ", precision)
         print("Recall: ", recall)
-        # TODO difference between ^ and v
-        return precision[len(precision)], recall[len(recall)]  # final precision, recall
+        return precision, recall
 
     def infer(self):
         """
@@ -271,7 +221,7 @@ class Evaluator():
                     face = img[int(y1):int(y2), int(x1):int(x2), :]
                     label = self.classifier.classifyFace(face)
                     preds.append(label.item())
-                    detection.append(x1, y1, x2, y2)
+                    detection.extend([x1, y1, x2, y2, conf])
                 detections.append(detection)
 
         inference_dict["Glasses"] += preds.count(0)
