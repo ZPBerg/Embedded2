@@ -16,7 +16,7 @@ and OpenCV can't tell the difference.
 
 def check_rotation(path_video_file: str):
     # only .mov files need to be rotated
-    if path_video_file.split('.')[-1] != '.MOV' or '.mov':
+    if path_video_file.split('.')[-1].upper() != '.MOV':
         return None
 
     # this returns meta-data of the video file in form of a dictionary
