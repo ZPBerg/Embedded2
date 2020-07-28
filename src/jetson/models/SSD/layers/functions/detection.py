@@ -1,7 +1,8 @@
 import torch
 from torch.autograd import Function
-from ....utils.box_utils import decode, nms
-from ...data import voc as cfg
+from models.utils.box_utils import decode
+from models.utils.box_utils import nms_torch as nms
+from models.SSD.data import voc as cfg
 from typing import List, Set, Dict, Tuple, Optional
 
 

@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from ...data import coco as cfg
-from ....utils.box_utils import match, log_sum_exp
+from models.SSD.data import coco as cfg
+from models.utils.box_utils import match, log_sum_exp
 from typing import Tuple
 
 class MultiBoxLoss(nn.Module):

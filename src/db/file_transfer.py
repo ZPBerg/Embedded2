@@ -1,7 +1,7 @@
 import paramiko
 import os
 import sys
-from .config import get_config
+from src.db.config import get_config
 from contextlib import contextmanager
 
 
@@ -24,10 +24,11 @@ def ftp_transfer():
     transport = None
     sftp = None
     config = get_config()
-    
+
     try:
         transport = paramiko.Transport((config["FTPHOST"], 22))
-        transport.connect(username=config["FTPUSER"], password=config["FTPPASS"])
+        transport.connect(
+            username=config["FTPUSER"], password=config["FTPPASS"])
         sftp = paramiko.SFTPClient.from_transport(transport)
         print('Sucessfully connected to host machine')
 

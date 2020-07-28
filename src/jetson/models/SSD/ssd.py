@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .layers.functions.prior_box import PriorBox
-from .layers.functions.detection import Detect
-from .layers.modules.l2norm import L2Norm
-from .data import voc, coco, wider_face, base, extras, mbox
+from models.SSD.layers.functions.prior_box import PriorBox
+from models.SSD.layers.functions.detection import Detect
+from models.SSD.layers.modules.l2norm import L2Norm
+from models.SSD.data import voc, coco, wider_face, base, extras, mbox
 from typing import List, Set, Dict, Tuple, Optional
 import os
 
