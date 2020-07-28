@@ -2,14 +2,14 @@ import argparse
 import datetime
 import json
 
-from src.jetson.db.db_connection import sql_cursor
-
-# from wherever import email method
+from src.db.db_connection import sql_cursor
+from scripts.automatic_notification import send_email
 
 """
 Put this file one folder up from the stored images.
-Eg. on the HELPS machine: if /local/b/embedvis/imgs contains images, 
+Eg. on ee220clnx1: if /local/b/embedvis/imgs contains images, 
 this file's path should be /local/b/embedvis/collect_images.py
+Set up a cron job to run this script daily.
 
 Collect images of non-goggle detections from the database.
 Upload images and metadata to Google Drive.
@@ -31,6 +31,7 @@ def get_metadata():
     """
 
     metadata = []
+    current_date = (datetime.date.today(),)
 
     # make sql connection
     # execute query
@@ -38,13 +39,13 @@ def get_metadata():
         try:
             cursor.execute('USE goggles')
             cursor.execute('SELECT b.image_name, b.X_Min, b.Y_Min, b.X_Max, b.Y_Max, '
-                           'i.image_name, i.init_vector from bbox AS b, image as i where '
-                           'b.image_name=i.image_name and b.goggles=False')
+                           'b.init_vector, i.image_name, i.image_date from BBOX AS b, IMAGE as i where '
+                           'b.image_name=i.image_name and i.image_date=? and b.goggles=False', current_date)
 
-            for (image_name, x_min, y_min, x_max, y_max, image_name, init_vector) in cursor:
+            for (image_name, x_min, y_min, x_max, y_max, init_vector, image_name, image_date) in cursor:
                 metadata.append({'image_name': image_name,
                                  'x_min': float(x_min),  # JSON cannot serialize Decimals.
-                                 'y_min': float(y_min),  # If there is a better way to do this, someone let me know.
+                                 'y_min': float(y_min),  # If there is a better way to do this, let me know.
                                  'x_max': float(x_max),
                                  'y_max': float(y_max),
                                  'init_vector': init_vector
@@ -75,14 +76,12 @@ def upload_files(metadata, dir):
     # subprocess rclone copy METADATA_FILE [Drive name]:
 
 
-# TODO call Seoyoung's method to email
+# TODO call Seoyoung's method to email???
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('Collect images.')
     parser.add_argument('--directory', '-d', type=str, required=True, help='Folder containing images to upload')
     args = parser.parse_args()
-
-    current_date = datetime.datetime.now().strftime("%m-%d-%Y")
 
     # call the methods
     metadata = get_metadata()
