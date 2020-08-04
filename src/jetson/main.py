@@ -8,15 +8,17 @@ from multiprocessing import Process, Queue, Value
 import cv2
 import torch
 
-from src.jetson.face_detector import FaceDetector 
+from src.jetson.face_detector import FaceDetector
 from src.jetson.video_capturer import VideoCapturer
 from src.jetson.classifier import Classifier
 from src.jetson.encryptor import Encryptor
 from src.db import data_insertion
 
 fileCount = Value('i', 0)
-encryptRet = Queue()  # Shared memory queue to allow child encryption process to return to parent
+# Shared memory queue to allow child encryption process to return to parent
+encryptRet = Queue()
 DETECTOR_TYPES = ['blazeface', 'retinaface', 'ssd']
+
 
 def writeImg(img, output_dir):
     """
@@ -101,11 +103,13 @@ if __name__ == "__main__":
     classifier = args["CLASSIFIER"]
     send_to_database = args["SEND_TO_DATABASE"]
     output_dir = args["OUTPUT_DIR"]
-    gstreamer = args["GSTREAMER"] # This should be true if running on jetson nano with picam
+    # This should be true if running on jetson nano with picam
+    gstreamer = args["GSTREAMER"]
     draw_frame = args["DRAW_FRAME"]
 
     if detector_type not in DETECTOR_TYPES:
-        print('Please include a valid detector type (\'blazeface\', \'ssd\', or \'retinaface\'')
+        print(
+            'Please include a valid detector type (\'blazeface\', \'ssd\', or \'retinaface\'')
         exit(1)
 
     device = torch.device('cpu')
@@ -128,17 +132,21 @@ if __name__ == "__main__":
         image_time = datetime.datetime.now().time()
         frame = capturer.get_frame()
         boxes = detector.detect(frame)
-        encryptedImg = frame.copy()  # copy memory for encrypting image separate from unencrypted image
+        # copy memory for encrypting image separate from unencrypted image
+        encryptedImg = frame.copy()
 
         if len(boxes) != 0:
-            p1 = Process(target=encryptWorker, args=(encryptor, encryptedImg, boxes, output_dir))
+            p1 = Process(target=encryptWorker, args=(
+                encryptor, encryptedImg, boxes, output_dir))
             p1.daemon = True
             p1.start()
 
             label = classifier.classifyFrame(frame, boxes)
+
             if send_to_database:
                 image_name, init_vec_list = encryptRet.get()
-                data_insertion.data_insert(image_name, image_date, image_time, init_vec_list, boxes, output_dir)
+                data_insertion.data_insert(
+                    image_name, image_date, image_time, init_vec_list, boxes, output_dir, label)
 
             fps = 1 / (time.time() - start_time)
             if draw_frame:

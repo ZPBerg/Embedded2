@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+from scripts.constants import IMAGE_EXT, VIDEO_EXT
 from scripts.utils import check_rotation, correct_rotation
 from src.jetson.face_detector import FaceDetector
 
@@ -19,8 +20,7 @@ Save the resulting crops as .jpgs in an output folder.
 """
 
 warnings.filterwarnings('once')
-IMAGE_EXT = ['.jpg', '.JPG', '.png', '.PNG']
-VIDEO_EXT = ['.mp4', '.MP4', 'mov', '.MOV', '.avi', '.AVI']
+
 
 
 def get_images(input_dir):

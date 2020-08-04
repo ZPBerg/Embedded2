@@ -18,5 +18,6 @@ dependencies:
   - distro=1.5.0
   - paramiko=2.7.1
   - pip
+  - pytest
   - pip:
     - salt==3001

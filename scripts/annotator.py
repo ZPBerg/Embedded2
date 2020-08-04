@@ -13,7 +13,7 @@ from scripts.utils import check_rotation, correct_rotation
 
 """
 Run the face detector model on a folder of videos (most recently used on TestVideos from the Drive).
-Save bbox detections to a csv file to be compared in evaluator.py.
+Save bbox detections to a csv file to be compared in evaluation.py
 An earlier version of this script was used to compare Retinaface with
 a Mobilenet backbone versus a Resnet backbone; comparison of object
 detectors would be its most applicable use.
@@ -57,7 +57,6 @@ if __name__ == '__main__':
 
     torch.set_grad_enabled(False)
 
-    # load the face detector
     detector = FaceDetector(detector=args.detector, detector_type=args.detector_type,
                             cuda=args.cuda and torch.cuda.is_available(), set_default_dev=True)
 
