@@ -3,6 +3,9 @@ from src.db.db_connection import sql_insert, IMAGE, BBOX
 from decimal import Decimal
 import datetime
 
+# location where the images will be stored (on the HELPS machine)
+IMAGE_DIR = '/local/b/embedvis/Nano_Images'
+
 
 def data_insert(image_name: str, image_date: datetime, image_time: datetime, init_vecs: list, bboxes: list, input_dir: str, labels: list):
     """Transfer image to remote storage then inserts image metadata and bounding boxes data in database
@@ -18,8 +21,8 @@ def data_insert(image_name: str, image_date: datetime, image_time: datetime, ini
     """
 
     # Below ftp transfer has been commented out for testing purposes
-    #with ftp_transfer() as transfer:
-        #transfer(input_dir, './Documents', image_name)
+    with ftp_transfer() as transfer:
+        transfer(input_dir, IMAGE_DIR, image_name)
 
     sql_insert(IMAGE(image_name, image_date, image_time))
 
