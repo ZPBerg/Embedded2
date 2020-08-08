@@ -19,7 +19,7 @@ class Encryption():
         self.key = PBKDF2("passphrase", self.salt).read(16) #Creates key using KDF scheme
 
     def encrypt(self,
-                coordinates: List[Tuple[int]],
+                coordinates: List[Tuple[int, int, int, int]],
                 image: 'numpy.ndarray[numpy.ndarray[numpy.ndarray[numpy.uint8]]]'):
         '''
         This method encrypts the facial regions.

@@ -20,7 +20,7 @@ class Classifier:
     def classifyFace(self,
                      face: np.ndarray):
         """
-        This method initializaes the transforms and classifies the face region
+        This method initializes the transforms and classifies the face region
         Args:
             face - A 3D numpy array containing facial region
 
@@ -29,6 +29,8 @@ class Classifier:
         """
 
         classifier = self.classifier
+
+        # TODO transforms are model-specific; works for MobilenetV2 whether goggles or masks
 
         if 0 in face.shape:
             pass
@@ -63,7 +65,7 @@ class Classifier:
             boxes - Coordinates of the bounding box around the face
 
         Return:
-            label: Classification label (Goggles, Glasses or Neither)
+            label: Classification label as an integer
         """
 
         label = []

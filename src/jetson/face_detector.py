@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 
@@ -6,6 +8,7 @@ from src.jetson.models.Retinaface.data.config import cfg_inference as infer_para
 from src.jetson.models.utils.transform import BaseTransform
 from src.jetson.models.Retinaface.layers.functions.prior_box import PriorBox
 from src.jetson.models.utils.box_utils import decode, do_nms, postprocess
+
 
 class FaceDetector:
     def __init__(self, detector: str, detector_type: str, detection_threshold=0.7, cuda=True, set_default_dev=False):
@@ -41,7 +44,7 @@ class FaceDetector:
 
             self.net = BlazeFace(self.device == torch.device("cuda:0"))
             self.net.load_weights(detector)
-            self.net.load_anchors("models/BlazeFace/anchors.npy")
+            self.net.load_anchors(os.path.join(os.path.dirname(__file__), "models/BlazeFace/anchors.npy"))
             self.model_name = 'blazeface'
             self.net.min_score_thresh = 0.75
             self.net.min_suppression_threshold = 0.3
@@ -95,7 +98,7 @@ class FaceDetector:
         elif self.model_name == 'blazeface':
             transformed_frame = self.transformer(frame)[0].astype(np.float32)
 
-            detections = self.net.predict_on_frame(transformed_frame)
+            detections = self.net.predict_on_image(transformed_frame)
             if isinstance(detections, torch.Tensor):
                 detections = detections.cpu().numpy()
 

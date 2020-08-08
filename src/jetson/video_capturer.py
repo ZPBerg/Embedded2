@@ -32,7 +32,8 @@ def gstreamer_pipeline(
 
 
 class VideoCapturer(object):
-    def __init__(self, gstreamer, dev=0):
+    # TODO update documentation
+    def __init__(self, gstreamer, run_video, video, dev=0):
         """
         This class captures videos using open-cv's VideoCapture object
         Args:
@@ -41,6 +42,8 @@ class VideoCapturer(object):
         """
         if gstreamer:
             self.capture = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
+        elif run_video:
+            self.capture = cv2.VideoCapture(video)
         else:
             self.capture = cv2.VideoCapture(dev)
 

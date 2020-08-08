@@ -64,8 +64,11 @@ def drawFrame(boxes, frame, fps):
         frame: current frame from video capturer being processed
         fps: frames per second the detector is capable of detecting, classifying, and encrypting
     """
-    class_names = ['Glasses', 'Goggles', 'Neither']
+    # TODO classification-specific
+    #class_names = ['Glasses', 'Goggles', 'Neither']
+    class_names = ['Mask', 'No mask']
     index = 0
+
     for box in boxes:
         x1, y1, x2, y2 = [int(b) for b in box[0:4]]
         x1 = max(0, x1)
@@ -80,15 +83,16 @@ def drawFrame(boxes, frame, fps):
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                             (0, 0, 255))
 
-        frame = cv2.putText(frame,
-                            'fps: %.3f' % fps,
-                            (int(box[0]), int(box[1] - 20)),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.5, (0, 0, 255))
+        #frame = cv2.putText(frame,
+         #                   'fps: %.3f' % fps,
+          #                  (int(box[0]), int(box[1] - 20)),
+           #                 cv2.FONT_HERSHEY_SIMPLEX,
+            #                0.5, (0, 0, 255))
 
         index += 1
 
     cv2.imshow("Face Detect", frame)
+    return frame
 
 
 if __name__ == "__main__":
@@ -106,6 +110,8 @@ if __name__ == "__main__":
     # This should be true if running on jetson nano with picam
     gstreamer = args["GSTREAMER"]
     draw_frame = args["DRAW_FRAME"]
+    run_video = args["RUN_VIDEO"]
+    video_file = args["VIDEO"]
 
     if detector_type not in DETECTOR_TYPES:
         print(
@@ -119,7 +125,7 @@ if __name__ == "__main__":
     classifier_model = torch.load(classifier, map_location=device)
     classifier_model.eval()
 
-    capturer = VideoCapturer(gstreamer)
+    capturer = VideoCapturer(gstreamer, run_video, video_file)
     detector = FaceDetector(detector=detector, detector_type=detector_type,
                             cuda=cuda and torch.cuda.is_available(), set_default_dev=True)
     classifier = Classifier(classifier_model, cuda)
@@ -131,32 +137,39 @@ if __name__ == "__main__":
         image_date = datetime.date.today()
         image_time = datetime.datetime.now().time()
         frame = capturer.get_frame()
-        boxes = detector.detect(frame)
-        # copy memory for encrypting image separate from unencrypted image
-        encryptedImg = frame.copy()
 
-        if len(boxes) != 0:
-            p1 = Process(target=encryptWorker, args=(
-                encryptor, encryptedImg, boxes, output_dir))
-            p1.daemon = True
-            p1.start()
+        # TODO should tqdm frame count for videos probably
+        # TODO checking for bad frame (only possible in video?) should only have to happen once
+        if frame is not None:
 
-            label = classifier.classifyFrame(frame, boxes)
+            boxes = detector.detect(frame)
+            # copy memory for encrypting image separate from unencrypted image
+            encryptedImg = frame.copy()
 
-            if send_to_database:
-                image_name, init_vec_list = encryptRet.get()
-                data_insertion.data_insert(
-                    image_name, image_date, image_time, init_vec_list, boxes, output_dir, label)
+            if len(boxes) != 0:
+                p1 = Process(target=encryptWorker, args=(
+                    encryptor, encryptedImg, boxes, output_dir))
+                p1.daemon = True
+                p1.start()
 
-            fps = 1 / (time.time() - start_time)
-            if draw_frame:
-                drawFrame(boxes, frame, fps)
+                label = classifier.classifyFrame(frame, boxes)
 
-            # remove frame creation and drawing before deployment
+                if send_to_database:
+                    image_name, init_vec_list = encryptRet.get()
+                    data_insertion.data_insert(
+                        image_name, image_date, image_time, init_vec_list, boxes, output_dir, label)
 
-            p1.join()
-            if cv2.waitKey(1) == 27:
-                run_face_detection = False
+                fps = 1 / (time.time() - start_time)
+                if draw_frame:
+                    # TODO save this drawn frame?
+                    drawn_frame = drawFrame(boxes, frame, fps)
+                    writeImg(drawn_frame, output_dir)
+
+                # remove frame creation and drawing before deployment
+
+                p1.join()
+                if cv2.waitKey(1) == 27:
+                    run_face_detection = False
 
     capturer.close()
     cv2.destroyAllWindows()
