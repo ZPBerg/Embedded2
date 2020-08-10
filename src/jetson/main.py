@@ -131,7 +131,12 @@ if __name__ == "__main__":
     classifier = Classifier(classifier_model, cuda)
     encryptor = Encryptor()
 
+    if run_video:
+        num_frames = int(capturer.capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_num = 0
+
     run_face_detection: bool = True
+
     while run_face_detection:  # main video detection loop that will iterate until ESC key is entered
         start_time = time.time()
         image_date = datetime.date.today()
@@ -140,8 +145,8 @@ if __name__ == "__main__":
 
         # TODO should tqdm frame count for videos probably
         # TODO checking for bad frame (only possible in video?) should only have to happen once
-        if frame is not None:
 
+        if frame is not None:
             boxes = detector.detect(frame)
             # copy memory for encrypting image separate from unencrypted image
             encryptedImg = frame.copy()
@@ -161,7 +166,6 @@ if __name__ == "__main__":
 
                 fps = 1 / (time.time() - start_time)
                 if draw_frame:
-                    # TODO save this drawn frame?
                     drawn_frame = drawFrame(boxes, frame, fps)
                     writeImg(drawn_frame, output_dir)
 
@@ -170,6 +174,12 @@ if __name__ == "__main__":
                 p1.join()
                 if cv2.waitKey(1) == 27:
                     run_face_detection = False
+
+        if run_video:
+            frame_num += 1
+            print('{}/{}'.format(frame_num, num_frames))
+            if frame_num == num_frames:
+                run_face_detection = False
 
     capturer.close()
     cv2.destroyAllWindows()

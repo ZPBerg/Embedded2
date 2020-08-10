@@ -1,10 +1,12 @@
 {
-    "DETECTOR" : "src/jetson/retinaface.pth",
+    "DETECTOR" : "retinaface.pth",
     "DETECTOR_TYPE" : "retinaface",
-    "CUDA" : false,
-    "CLASSIFIER" : "src/jetson/ensemble2_halffrozen_aug3.pth",
-    "SEND_TO_DATABASE" : true,
+    "CUDA" : true,
+    "CLASSIFIER" : "99acc.pth",
+    "SEND_TO_DATABASE" : false,
     "OUTPUT_DIR" : "encrypt_imgs",
     "GSTREAMER" : false,
-    "DRAW_FRAME" : false
+    "DRAW_FRAME" : true,
+    "RUN_VIDEO":  true,
+    "VIDEO": "videos/eegh07ac-a 3.avi"
 }
