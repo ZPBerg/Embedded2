@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 
@@ -41,7 +43,7 @@ class FaceDetector:
 
             self.net = BlazeFace(self.device == torch.device("cuda:0"))
             self.net.load_weights(detector)
-            self.net.load_anchors("models/BlazeFace/anchors.npy")
+            self.net.load_anchors(os.path.join(os.path.dirname(__file__), 'models/BlazeFace/anchors.npy'))
             self.model_name = 'blazeface'
             self.net.min_score_thresh = 0.75
             self.net.min_suppression_threshold = 0.3
@@ -110,7 +112,7 @@ class FaceDetector:
                 xmax = detections[i, 3] * frame.shape[1]
                 conf = detections[i, 16]
 
-                transformed_frame = img / 127.5 - 1.0
+                transformed_frame = transformed_frame / 127.5 - 1.0
 
                 for k in range(6):
                     kp_x = detections[i, 4 + k * 2] * transformed_frame.shape[1]
