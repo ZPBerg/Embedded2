@@ -15,7 +15,7 @@ install:
 
   - conda env create -f environment.yml
   - conda activate ecv2
-  - python setup.py install
+  - python -m pip install -e .
 
 script:
   - pytest

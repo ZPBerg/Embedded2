@@ -45,6 +45,8 @@ class VideoCapturer(object):
             self.capture = cv2.VideoCapture(dev)
 
         _, self.frame = self.capture.read()
+        self.gstreamer = gstreamer
+        self.dev = dev
         self.running = True
         self.t1 = Thread(target=self.update, args=())
         self.t1.daemon = True
@@ -54,8 +56,29 @@ class VideoCapturer(object):
         """Get next frame in video stream"""
         while self.running:
             if self.capture.isOpened():
-                _, self.frame = self.capture.read()
+                ret, self.frame = self.capture.read()
+                if not ret:
+                    self.running = False
+                    
             time.sleep(.01)
+
+    def reboot(self):
+        """Attempts to reestablish connection to camera"""
+        ret = False 
+        while not ret:
+            if self.gstreamer:
+                self.capture = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
+            else:
+                self.capture = cv2.VideoCapture(self.dev)
+            print("Failed to connect to camera. Trying again in 5s...")
+            time.sleep(5)
+            ret, self.frame = self.capture.read()        
+        
+        print("Camera found! Rebooting frame capturer thread")
+        self.running = True
+        self.t1 = Thread(target=self.update, args=())
+        self.t1.daemon = True
+        self.t1.start() 
 
     def get_frame(self):
         """ Return current frame in video stream"""
