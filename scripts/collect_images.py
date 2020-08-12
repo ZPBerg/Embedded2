@@ -32,12 +32,7 @@ def get_metadata():
     """
 
     metadata = []
-    # current_date = (datetime.date.today(),)
-
-    # for testing
-    date = datetime.datetime(2020, 8, 10)
-    current_date = (date,)
-    # for testing
+    current_date = (datetime.date.today(),)
 
     # make sql connection
     # execute query
