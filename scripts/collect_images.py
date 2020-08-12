@@ -7,35 +7,35 @@ import subprocess
 from src.db.db_connection import sql_cursor
 
 """
-Put this file one folder up from the stored images.
-Eg. on ee220clnx1: if /local/b/embedvis/Nano_Images contains images, 
-this file's path should be /local/b/embedvis/collect_images.py
-Set up a cron job to run this script daily.
+This script should be set up with a cron job to run daily.
 rclone should be set up, in our case pointing to a Google Drive folder: https://rclone.org/drive/
 
 Collect images of non-goggle detections from the database.
 Upload images and metadata to Google Drive.
 """
 
-METADATA_FILE = os.path.join(os.path.dirname(__file__), 'metadata.json')
+METADATA_FILE = 'metadata.json'
+# rclone on ee220clnx1 is an earlier version that doesn't support copying to shared folders
+RCLONE_PATH = '/home/shay/a/bergz/rclone-v1.52.2-linux-amd64/rclone'
 TODAY = datetime.datetime.today().strftime('%Y-%m-%d')
 
 
 def get_metadata():
     """
     Get image filenames and other relevant metadata from the database.
-    @return: A list of dictionaries with the metadata for each image TODO describe the metadata
+    Save metadata to a file for future decryption.
+    @return: A list of dictionaries with the metadata for each image
 
-    Query:
-    SELECT b.image_name, b.X_Min, b.Y_Min, b.X_Max, b.Y_Max,
-    i.image_name, i.init_vector from bbox AS b, image as i where b.image_name=i.image_name and b.goggles=False
+    Example list: [
+    {'image_name': "0.jpg", 'x_min': 0.0, 'y_min': 0.0, 'x_max': 100.0, 'y_max': 100.0, 'init_vector': "example"}
+    {'image_name': "1.jpg", 'x_min': 25.0, 'y_min': 25.0, 'x_max': 120.0, 'y_max': 140.0, 'init_vector': "example2"}]
     """
 
     metadata = []
-    #current_date = (datetime.date.today(),)
+    # current_date = (datetime.date.today(),)
 
     # for testing
-    date = datetime.datetime(2020, 7, 23)
+    date = datetime.datetime(2020, 8, 10)
     current_date = (date,)
     # for testing
 
@@ -64,45 +64,40 @@ def get_metadata():
     return metadata
 
 
-def upload_files(metadata, dir, rclone_path, remote_name):
+def upload_files(metadata, dir, remote_name):
     """
     For each filename returned by get_metadata, upload image
     to Drive. Upload the day's metadata file.
     @param metadata: the list of dictionaries returned by get_metadata
     @param dir: the folder containing the images to upload
-    @param rclone_path: path to rclone installation. Must be an absolute path if on the HELPS machine.
     @param remote_name: name of remote location in rclone
     """
 
-    # prevent sending the same image twice (if two faces are detected)
     images = []
 
     # send images to the Drive
     for image in metadata:
+        # prevent sending the same image twice (if two faces are detected)
         if image not in images:
             images.append(image)
-            image_path = os.path.join(os.path.dirname(__file__), dir, image['image_name'])
-            subprocess.run([rclone_path, 'copy', image_path, '{}:{}'.format(remote_name, TODAY)])
+            image_path = os.path.join(dir, image['image_name'])
+            subprocess.run([RCLONE_PATH, 'copy', image_path, '{}:{}'.format(remote_name, TODAY)])
 
-    # upload metadata json to the Drive
-    subprocess.run([rclone_path, 'copy', METADATA_FILE, '{}:{}'.format(remote_name, TODAY)])
+    # upload metadata.json to the Drive
+    subprocess.run([RCLONE_PATH, 'copy', METADATA_FILE, '{}:{}'.format(remote_name, TODAY)])
+    os.remove(METADATA_FILE)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('Collect images.')
     parser.add_argument('--directory', '-d', type=str, required=True, help='Folder containing images to upload')
-    parser.add_argument('--rclone_path', '-r', type=str, default='rclone', help='Path to rclone installation. If not '
-                                                                                'on the HELPS machine, the default '
-                                                                                'should work (if you have rclone '
-                                                                                'installed).')
     parser.add_argument('--remote_name', type=str, default='EmbedVisDrive', help='Name of remote location according '
-                                                                                  'to rclone (default is the Drive '
-                                                                                  'name on the HELPS machine). Don\'t '
-                                                                                  'include the semicolon.')
+                                                                                 'to rclone (default is the Drive '
+                                                                                 'name on ee220clnx1). Don\'t '
+                                                                                 'include the semicolon.')
     args = parser.parse_args()
 
-    # call the methods
     metadata = get_metadata()
-    upload_files(metadata, args.directory, args.rclone_path, args.remote_name)
+    upload_files(metadata, args.directory, args.remote_name)
 
     exit(0)
