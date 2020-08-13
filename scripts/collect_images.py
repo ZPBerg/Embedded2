@@ -8,16 +8,14 @@ from src.db.db_connection import sql_cursor
 
 """
 This script should be set up with a cron job to run daily.
-rclone should be set up, in our case pointing to a Google Drive folder: https://rclone.org/drive/
+Each user will have to set up their rclone config, in our case pointing to a Google Drive folder: https://rclone.org/drive/
+This can be done with /local/b/embedvis/rclone-v1.52.2-linux-amd64/rclone config
 
 Collect images of non-goggle detections from the database.
 Upload images and metadata to Google Drive.
 """
 
 METADATA_FILE = 'metadata.json'
-# rclone on ee220clnx1 is an earlier version that doesn't support copying to shared folders
-RCLONE_PATH = '/home/shay/a/bergz/rclone-v1.52.2-linux-amd64/rclone'
-TODAY = datetime.datetime.today().strftime('%Y-%m-%d')
 
 
 def get_metadata():
@@ -45,8 +43,8 @@ def get_metadata():
 
             for (image_name, x_min, y_min, x_max, y_max, init_vector, goggles) in cursor:
                 metadata.append({'image_name': image_name,
-                                 'x_min': float(x_min),  # JSON cannot serialize Decimals.
-                                 'y_min': float(y_min),  # If there is a better way to do this, let me know.
+                                 'x_min': float(x_min),
+                                 'y_min': float(y_min),
                                  'x_max': float(x_max),
                                  'y_max': float(y_max),
                                  'init_vector': init_vector
@@ -59,7 +57,7 @@ def get_metadata():
     return metadata
 
 
-def upload_files(metadata, dir, remote_name):
+def upload_files(metadata, dir, rclone_path, remote_name):
     """
     For each filename returned by get_metadata, upload image
     to Drive. Upload the day's metadata file.
@@ -69,6 +67,7 @@ def upload_files(metadata, dir, remote_name):
     """
 
     images = []
+    today = datetime.datetime.today().strftime('%Y-%m-%d')
 
     # send images to the Drive
     for image in metadata:
@@ -76,23 +75,24 @@ def upload_files(metadata, dir, remote_name):
         if image not in images:
             images.append(image)
             image_path = os.path.join(dir, image['image_name'])
-            subprocess.run([RCLONE_PATH, 'copy', image_path, '{}:{}'.format(remote_name, TODAY)])
+            subprocess.run([rclone_path, 'copy', image_path, '{}:{}'.format(remote_name, today)])
 
     # upload metadata.json to the Drive
-    subprocess.run([RCLONE_PATH, 'copy', METADATA_FILE, '{}:{}'.format(remote_name, TODAY)])
+    subprocess.run([rclone_path, 'copy', METADATA_FILE, '{}:{}'.format(remote_name, today)])
     os.remove(METADATA_FILE)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('Collect images.')
     parser.add_argument('--directory', '-d', type=str, required=True, help='Folder containing images to upload')
-    parser.add_argument('--remote_name', type=str, default='EmbedVisDrive', help='Name of remote location according '
-                                                                                 'to rclone (default is the Drive '
-                                                                                 'name on ee220clnx1). Don\'t '
-                                                                                 'include the semicolon.')
+    parser.add_argument('--rclone_path', '-r', type=str, default='/local/b/embedvis/rclone-v1.52.2-linux-amd64/rclone',
+                        help='Location of rclone binary. Default version on ee220clnx1 doesn\'t support copying to '
+                             'shared folders.')
+    parser.add_argument('--remote_name', type=str, help='Name of remote location according to rclone config. You must '
+                                                        'create your own config.')
     args = parser.parse_args()
 
     metadata = get_metadata()
-    upload_files(metadata, args.directory, args.remote_name)
+    upload_files(metadata, args.directory, args.rclone_path, args.remote_name)
 
     exit(0)
